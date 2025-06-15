@@ -36,7 +36,7 @@
 		{"id": "st",    "texture": "assets/textures/uomo/Ch01_1001_Diffuse.png",	   "format": "C"},
 		{"id": "pnois", "texture": "assets/textures/Perlin_noise.png", "format": "C"},
 		{"id": "main", "texture": "assets/textures/textures0.png", "format": "C"},
-		{"id": "skybox", "texture": "assets/textures/skybox.jpg", "format": "C"},
+		{"id": "skybox", "texture": "assets/textures/daybox.png", "format": "C"},
 		{"id": "ap", "texture": "assets/textures/airplane.jpg", "format": "C"},
 		{"id": "gem", "texture": "assets/textures/Gem01_Blue_Albedo.png", "format": "C"},
 		{"id": "scba", "texture": "assets/textures/SoccerBall/ball_euro_2020_PBR_fbx_euro_ball_2020_vray_AlbedoTransparency.png", "format": "C"},

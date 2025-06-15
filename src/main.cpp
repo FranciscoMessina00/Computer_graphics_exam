@@ -67,15 +67,16 @@ class E09 : public BaseProject {
 	// Here you list all the Vulkan objects you need:
 	
 	// Descriptor Layouts [what will be passed to the shaders]
-	DescriptorSetLayout DSLlocalChar, DSLlocalSimp, DSLlocalPBR, DSLglobal, DSLskyBox;
+	DescriptorSetLayout DSLlocalChar, DSLlocalSimp, DSLlocalGem, DSLlocalPBR, DSLglobal, DSLskyBox;
 
 	// Vertex formants, Pipelines [Shader couples] and Render passes
 	VertexDescriptor VDchar;
 	VertexDescriptor VDsimp;
+	VertexDescriptor VDgem;
 	VertexDescriptor VDskyBox;
 	VertexDescriptor VDtan;
 	RenderPass RP;
-	Pipeline Pchar, PsimpObj, PskyBox, P_PBR;
+	Pipeline Pchar, PsimpObj, PskyBox, P_PBR, Pgem;
 	//*DBG*/Pipeline PDebug;
 
 	// Models, textures and Descriptors (values assigned to the uniforms)
@@ -172,6 +173,16 @@ class E09 : public BaseProject {
 					{2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 1, 1}
 				  });
 
+		DSLlocalGem.init(this, {
+					// this array contains the binding:
+					// first  element : the binding number
+					// second element : the type of element (buffer or texture)
+					// third  element : the pipeline stage where it will be used
+					{0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_VERTEX_BIT, sizeof(UniformBufferObjectSimp), 1},
+					{1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 0, 1},
+					{2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 1, 1}
+				  });
+
 		DSLskyBox.init(this, {
 			{0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_VERTEX_BIT, sizeof(skyBoxUniformBufferObject), 1},
 			{1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 0, 1}
@@ -215,6 +226,17 @@ class E09 : public BaseProject {
 				         sizeof(glm::vec2), UV}
 				});
 
+		VDgem.init(this, {
+				  {0, sizeof(VertexSimp), VK_VERTEX_INPUT_RATE_VERTEX}
+				}, {
+				  {0, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(VertexSimp, pos),
+						 sizeof(glm::vec3), POSITION},
+				  {0, 1, VK_FORMAT_R32G32B32_SFLOAT, offsetof(VertexSimp, norm),
+						 sizeof(glm::vec3), NORMAL},
+				  {0, 2, VK_FORMAT_R32G32_SFLOAT, offsetof(VertexSimp, UV),
+						 sizeof(glm::vec2), UV}
+				});
+
 		VDskyBox.init(this, {
 		  {0, sizeof(skyBoxVertex), VK_VERTEX_INPUT_RATE_VERTEX}
 		}, {
@@ -235,11 +257,12 @@ class E09 : public BaseProject {
 				         sizeof(glm::vec4), TANGENT}
 				});
 				
-		VDRs.resize(4);
+		VDRs.resize(5);
 		VDRs[0].init("VDchar",   &VDchar);
 		VDRs[1].init("VDsimp",   &VDsimp);
 		VDRs[2].init("VDskybox", &VDskyBox);
 		VDRs[3].init("VDtan",    &VDtan);
+		VDRs[4].init("VDgem",	&VDgem);
 		
 		// initializes the render passes
 		RP.init(this);
@@ -253,6 +276,7 @@ class E09 : public BaseProject {
 		Pchar.init(this, &VDchar, "shaders/PosNormUvTanWeights.vert.spv", "shaders/CookTorranceForCharacter.frag.spv", {&DSLglobal, &DSLlocalChar});
 
 		PsimpObj.init(this, &VDsimp, "shaders/SimplePosNormUV.vert.spv", "shaders/CookTorrance.frag.spv", {&DSLglobal, &DSLlocalSimp});
+		Pgem.init(this, &VDgem, "shaders/SimplePosNormUV.vert.spv", "shaders/CookTorrance.frag.spv", {&DSLglobal, &DSLlocalGem});
 
 		PskyBox.init(this, &VDskyBox, "shaders/SkyBoxShader.vert.spv", "shaders/SkyBoxShader.frag.spv", {&DSLskyBox});
 		PskyBox.setCompareOp(VK_COMPARE_OP_LESS_OR_EQUAL);
@@ -287,7 +311,7 @@ class E09 : public BaseProject {
 										/*t1*/{true,  1, {}} // index 1 of the "texture" field in the json file
 									 }
 									}}
-							  }, /*TotalNtextures*/2, &VDsimp);
+							  }, /*TotalNtextures*/2, &VDgem);
 		PRs[3].init("SkyBox", {
 							 {&PskyBox, {//Pipeline and DSL for the first pass
 								 /*DSLskyBox*/{
