@@ -291,9 +291,9 @@ class E09 : public BaseProject {
 		// Models, textures and Descriptors (values assigned to the uniforms)
 		
 		// sets the size of the Descriptor Set Pool
-		DPSZs.uniformBlocksInPool = 3;
-		DPSZs.texturesInPool = 5;
-		DPSZs.setsInPool = 3;
+		DPSZs.uniformBlocksInPool = 10;
+		DPSZs.texturesInPool = 10;
+		DPSZs.setsInPool = 10;
 		
 std::cout << "\nLoading the scene\n\n";
 		if(SC.init(this, /*Npasses*/1, VDRs, PRs, "assets/models/scene.json") != 0) {
@@ -504,7 +504,7 @@ std::cout << "Playing anim: " << curAnim << "\n";
 //printMat4("TF[55]", (*TMsp)[55]);
 		
 		glm::mat4 AdaptMat =
-			glm::scale(glm::mat4(1.0f), glm::vec3(0.01f)) * 
+			glm::scale(glm::mat4(1.0f), glm::vec3(0.01f)) *
 			glm::rotate(glm::mat4(1.0f), glm::radians(90.0f), glm::vec3(1.0f,0.0f,0.0f));
 		
 		int instanceId;
