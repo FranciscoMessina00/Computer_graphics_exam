@@ -12,6 +12,7 @@
 		{"id": "hm1",  "VD": "VDchar",  "model": "Mesh", "node": "Ch01_Body", "meshId": 1, "asset": "hm", "format":"ASSET"},
 		{"id": "gb", "VD": "VDsimp", "model": "assets/models/gelatoBus.mgcg", "format":"MGCG"},
 		{"id": "skybox", "VD": "VDskybox", "model": "assets/models/SkyBoxCube.obj", "format":"OBJ"},
+		{"id": "ap", "VD": "VDsimp", "model": "assets/models/airplane.obj", "format": "OBJ"},
 		{"id": "scb", "VD": "VDtan", "model": "assets/models/SoccerBall.gltf", "format":"GLTF"},
 		{"id": "ground",  "VD": "VDtan",  "model": "Ground", "node": "Ground", "meshId": 0, "asset": "ct", "format":"ASSET"},
 		{"id": "buRm0",  "VD": "VDtan",  "model": "BuildingR", "node": "BuildingR", "meshId": 0, "asset": "ct", "format":"ASSET"},
@@ -35,6 +36,7 @@
 		{"id": "pnois", "texture": "assets/textures/Perlin_noise.png", "format": "C"},
 		{"id": "main", "texture": "assets/textures/textures0.png", "format": "C"},
 		{"id": "skybox", "texture": "assets/textures/skybox.jpg", "format": "C"},
+		{"id": "ap", "texture": "assets/textures/airplane.jpg", "format": "C"},
 		{"id": "scba", "texture": "assets/textures/SoccerBall/ball_euro_2020_PBR_fbx_euro_ball_2020_vray_AlbedoTransparency.png", "format": "C"},
 		{"id": "scbnm", "texture": "assets/textures/SoccerBall/ball_euro_2020_PBR_fbx_euro_ball_2020_vray_Normal.png", "format": "D"},
 		{"id": "scbmt", "texture": "assets/textures/SoccerBall/Untitled.png", "format": "D"},
@@ -79,7 +81,12 @@
 				"transform": [1, 0, 0, 0,
 							  0, 1, 0, 0,
 							  0, 0, 1, -5,
-							  0, 0, 0, 1]}
+							  0, 0, 0, 1]},
+			{"id": "ap",  "model": "ap",   "texture": ["ap", "pnois"],
+				"eulerAngles": [-90, 90, 0],
+				"scale": [0.25, 0.25, 0.25],
+				"translate": [-10, 0, 0]
+			}
 		]}, 
 		{"technique": "SkyBox", "elements": [
 			{"id": "skybox",  "model": "skybox",   "texture": ["skybox"]}
