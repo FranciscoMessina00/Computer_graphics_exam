@@ -7,6 +7,7 @@
 #include "modules/TextMaker.hpp"
 #include "modules/Scene.hpp"
 #include "modules/Animations.hpp"
+#include <random>
 
 // The uniform buffer object used in this example
 struct VertexChar {
@@ -106,6 +107,15 @@ class E09 : public BaseProject {
 	float Roll = glm::radians(0.0f);
 	
 	glm::vec4 debug1 = glm::vec4(0);
+
+	std::vector<glm::mat4>    gemWorlds;      // world transforms for each spawned gem
+	float gemAngle = 0.0f;
+
+	std::mt19937 rng;
+	std::uniform_real_distribution<float> distX;
+	std::uniform_real_distribution<float> distY;
+	std::uniform_real_distribution<float> distZ;
+
 
 	// Here you set the main application parameters
 	void setWindowParameters() {
@@ -251,7 +261,7 @@ class E09 : public BaseProject {
 
 		P_PBR.init(this, &VDtan, "shaders/SimplePosNormUvTan.vert.spv", "shaders/PBR.frag.spv", {&DSLglobal, &DSLlocalPBR});
 
-		PRs.resize(4);
+		PRs.resize(5);
 		PRs[0].init("CookTorranceChar", {
 							 {&Pchar, {//Pipeline and DSL for the first pass
 								 /*DSLglobal*/{},
@@ -269,14 +279,23 @@ class E09 : public BaseProject {
 									 }
 									}}
 							  }, /*TotalNtextures*/2, &VDsimp);
-		PRs[2].init("SkyBox", {
+		PRs[2].init("CookTorranceGem", {
+							 {&PsimpObj, {//Pipeline and DSL for the first pass
+								 /*DSLglobal*/{},
+								 /*DSLlocalSimp*/{
+										/*t0*/{true,  0, {}},// index 0 of the "texture" field in the json file
+										/*t1*/{true,  1, {}} // index 1 of the "texture" field in the json file
+									 }
+									}}
+							  }, /*TotalNtextures*/2, &VDsimp);
+		PRs[3].init("SkyBox", {
 							 {&PskyBox, {//Pipeline and DSL for the first pass
 								 /*DSLskyBox*/{
 										/*t0*/{true,  0, {}}// index 0 of the "texture" field in the json file
 									 }
 									}}
 							  }, /*TotalNtextures*/1, &VDskyBox);
-		PRs[3].init("PBR", {
+		PRs[4].init("PBR", {
 							 {&P_PBR, {//Pipeline and DSL for the first pass
 								 /*DSLglobal*/{},
 								 /*DSLlocalPBR*/{
@@ -316,6 +335,22 @@ std::cout << "\nLoading the scene\n\n";
 
 		// Prepares for showing the FPS count
 		txt.print(1.0f, 1.0f, "FPS:",1,"CO",false,false,true,TAL_RIGHT,TRH_RIGHT,TRV_BOTTOM,{1.0f,0.0f,0.0f,1.0f},{0.8f,0.8f,0.0f,1.0f});
+
+		// Adding randomisation of gems
+		std::random_device rd;
+		rng = std::mt19937(rd());
+		distX = std::uniform_real_distribution<float>(-10.0f, 10.0f);
+		distY = std::uniform_real_distribution<float>(  0.0f,  10.0f);
+		distZ = std::uniform_real_distribution<float>(-10.0f, 10.0f);
+
+		gemWorlds.resize(10);
+		for (auto& M : gemWorlds) {
+			M =
+				glm::translate(glm::mat4(1.0f),
+							 glm::vec3(distX(rng), distY(rng), distZ(rng)))
+				* glm::scale(glm::mat4(1.0f), glm::vec3(0.025f));
+		}
+		std::cout << "Init done!\n";
 	}
 	
 	// Here you create your pipelines and Descriptor Sets!
@@ -375,13 +410,13 @@ std::cout << "\nLoading the scene\n\n";
 	static void populateCommandBufferAccess(VkCommandBuffer commandBuffer, int currentImage, void *Params) {
 		// Simple trick to avoid having always 'T->'
 		// in che code that populates the command buffer!
-//std::cout << "Populating command buffer for " << currentImage << "\n";
+		std::cout << "Populating command buffer for " << currentImage << "\n";
 		E09 *T = (E09 *)Params;
 		T->populateCommandBuffer(commandBuffer, currentImage);
 	}
 	// This is the real place where the Command Buffer is written
 	void populateCommandBuffer(VkCommandBuffer commandBuffer, int currentImage) {
-		
+		std::cout << "Let's command buffer!";
 		// begin standard pass
 		RP.begin(commandBuffer, currentImage);
 
@@ -393,6 +428,7 @@ std::cout << "\nLoading the scene\n\n";
 	// Here is where you update the uniforms.
 	// Very likely this will be where you will be writing the logic of your application.
 	void updateUniformBuffer(uint32_t currentImage) {
+		// std::cout << "Inside uniform buffer!";
 		static bool debounce = false;
 		static int curDebounce = 0;
 		
@@ -477,8 +513,31 @@ std::cout << "Playing anim: " << curAnim << "\n";
 			}
 		}
 
+		// press H to re‐randomize
+		if (glfwGetKey(window, GLFW_KEY_H)) {
+			if(!debounce) {
+				debounce = true;
+				curDebounce = GLFW_KEY_H;
+				for (auto& M: gemWorlds) {
+					glm::vec3 p{distX(rng), distY(rng), distZ(rng)};
+					M = glm::translate(glm::mat4(1.0f), p)
+					  * glm::scale(glm::mat4(1.0f), glm::vec3(0.025f));
+				}
+			}
+		} else {
+			if((curDebounce == GLFW_KEY_H) && debounce) {
+				debounce = false;
+				curDebounce = 0;
+			}
+		}
+
 		// moves the view
 		float deltaT = GameLogic();
+		// spin speed: one full revolution every 5 seconds
+		const float GEM_SPIN_SPEED = glm::two_pi<float>() / 5.0f;
+		gemAngle += GEM_SPIN_SPEED * deltaT;
+		// keep it in [0,2π) if you like
+		if (gemAngle > glm::two_pi<float>()) gemAngle -= glm::two_pi<float>();
 		
 		// updated the animation
 		const float SpeedUpAnimFact = 0.85f;
@@ -532,22 +591,37 @@ std::cout << "Playing anim: " << curAnim << "\n";
 			SC.TI[1].I[instanceId].DS[0][0]->map(currentImage, &gubo, 0); // Set 0
 			SC.TI[1].I[instanceId].DS[0][1]->map(currentImage, &ubos, 0);  // Set 1
 		}
-		
+
+		UniformBufferObjectSimp uboGem{};
+		// then spin around Y by gemAngle, in object‐local space:
+		glm::mat4 spinY = glm::rotate(glm::mat4(1.0f),
+									  gemAngle,
+									  glm::vec3(0,1,0));
+		for(instanceId = 0; instanceId < SC.TI[2].InstanceCount; instanceId++) {
+			uboGem.mMat   = gemWorlds[instanceId]
+				* spinY
+				* glm::rotate(glm::mat4(1.0f), glm::radians(90.0f), glm::vec3(1, 0, 0))
+				* glm::scale(glm::mat4(1.0f), glm::vec3(0.5f));
+			uboGem.mvpMat = ViewPrj * uboGem.mMat;
+			uboGem.nMat   = glm::inverse(glm::transpose(uboGem.mMat));
+
+			SC.TI[2].I[instanceId].DS[0][0]->map(currentImage, &gubo, 0); // Set 0
+			SC.TI[2].I[instanceId].DS[0][1]->map(currentImage, &uboGem, 0);  // Set 1
+		}
 		// skybox pipeline
 		skyBoxUniformBufferObject sbubo{};
 		sbubo.mvpMat = ViewPrj * glm::translate(glm::mat4(1), cameraPos) * glm::scale(glm::mat4(1), glm::vec3(100.0f));
-		SC.TI[2].I[0].DS[0][0]->map(currentImage, &sbubo, 0);
+		SC.TI[3].I[0].DS[0][0]->map(currentImage, &sbubo, 0);
 
 		// PBR objects
-		for(instanceId = 0; instanceId < SC.TI[3].InstanceCount; instanceId++) {
-			ubos.mMat   = SC.TI[3].I[instanceId].Wm;
+		for(instanceId = 0; instanceId < SC.TI[4].InstanceCount; instanceId++) {
+			ubos.mMat   = SC.TI[4].I[instanceId].Wm;
 			ubos.mvpMat = ViewPrj * ubos.mMat;
 			ubos.nMat   = glm::inverse(glm::transpose(ubos.mMat));
 
-			SC.TI[3].I[instanceId].DS[0][0]->map(currentImage, &gubo, 0); // Set 0
-			SC.TI[3].I[instanceId].DS[0][1]->map(currentImage, &ubos, 0);  // Set 1
+			SC.TI[4].I[instanceId].DS[0][0]->map(currentImage, &gubo, 0); // Set 0
+			SC.TI[4].I[instanceId].DS[0][1]->map(currentImage, &ubos, 0);  // Set 1
 		}
-
 
 		// updates the FPS
 		static float elapsedT = 0.0f;

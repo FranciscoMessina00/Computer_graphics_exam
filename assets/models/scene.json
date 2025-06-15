@@ -88,13 +88,60 @@
 				"eulerAngles": [-90, 90, 0],
 				"scale": [0.25, 0.25, 0.25],
 				"translate": [-10, 0, 0]
+			}
+		]},
+		{"technique": "CookTorranceGem", "elements": [
+			{"id": "gem1",  "model": "gem",   "texture": ["gem", "pnois"],
+				"scale": [1, 1, 1],
+				"translate": [0, 0, 0],
+				"eulerAngles": [90, 0, 0]
 			},
-			{"id": "gem",  "model": "gem",   "texture": ["gem", "pnois"],
-				"scale": [0.025, 0.025, 0.025],
-				"translate": [0, 2, 0],
+			{"id": "gem2",  "model": "gem",   "texture": ["gem", "pnois"],
+				"scale": [1, 1, 1],
+				"translate": [0, 0, 0],
+				"eulerAngles": [90, 0, 0]
+			},
+			{"id": "gem3",  "model": "gem",   "texture": ["gem", "pnois"],
+				"scale": [1, 1, 1],
+				"translate": [0, 0, 0],
+				"eulerAngles": [90, 0, 0]
+			},
+			{"id": "gem4",  "model": "gem",   "texture": ["gem", "pnois"],
+				"scale": [1, 1, 1],
+				"translate": [0, 0, 0],
+				"eulerAngles": [90, 0, 0]
+			},
+			{"id": "gem5",  "model": "gem",   "texture": ["gem", "pnois"],
+				"scale": [1, 1, 1],
+				"translate": [0, 0, 0],
+				"eulerAngles": [90, 0, 0]
+			},
+			{"id": "gem6",  "model": "gem",   "texture": ["gem", "pnois"],
+				"scale": [1, 1, 1],
+				"translate": [0, 0, 0],
+				"eulerAngles": [90, 0, 0]
+			},
+			{"id": "gem7",  "model": "gem",   "texture": ["gem", "pnois"],
+				"scale": [1, 1, 1],
+				"translate": [0, 0, 0],
+				"eulerAngles": [90, 0, 0]
+			},
+			{"id": "gem8",  "model": "gem",   "texture": ["gem", "pnois"],
+				"scale": [1, 1, 1],
+				"translate": [0, 0, 0],
+				"eulerAngles": [90, 0, 0]
+			},
+			{"id": "gem9",  "model": "gem",   "texture": ["gem", "pnois"],
+				"scale": [1, 1, 1],
+				"translate": [0, 0, 0],
+				"eulerAngles": [90, 0, 0]
+			},
+			{"id": "gem10",  "model": "gem",   "texture": ["gem", "pnois"],
+				"scale": [1, 1, 1],
+				"translate": [0, 0, 0],
 				"eulerAngles": [90, 0, 0]
 			}
-		]}, 
+		]},
 		{"technique": "SkyBox", "elements": [
 			{"id": "skybox",  "model": "skybox",   "texture": ["skybox"]}
 		]}, 

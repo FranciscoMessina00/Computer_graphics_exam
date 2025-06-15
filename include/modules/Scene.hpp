@@ -464,21 +464,21 @@ void Scene::populateCommandBuffer(VkCommandBuffer commandBuffer, int passId, int
 		exit(0);
 	}
 	
-//std::cout << "Generating draw calls for pass " << passId << "\n";
+std::cout << "Generating draw calls for pass " << passId << "\n";
 	for(int k = 0; k < TechniqueInstanceCount; k++) {
-//std::cout << "Considering technique " << k << "\n";
+std::cout << "Considering technique " << k << "\n";
 		for(int i = 0; i < TI[k].InstanceCount; i++) {
 			Pipeline *P = TI[k].T->PT[passId].P;
 			if(P != nullptr) {
 				P->bind(commandBuffer);
 
-//std::cout << "Drawing Instance " << i << "\n";
+std::cout << "Drawing Instance " << i << "\n";
 				M[TI[k].I[i].Mid]->bind(commandBuffer);
 				for(int j = 0; j < TI[k].I[i].NDs[passId]; j++) {
-//std::cout << "Binding DS: set " << j << "\n";
+std::cout << "Binding DS: set " << j << "\n";
 					TI[k].I[i].DS[passId][j]->bind(commandBuffer, *P, j, currentImage);
 				}
-//std::cout << "Draw Call\n";						
+std::cout << "Draw Call\n";
 				vkCmdDrawIndexed(commandBuffer,
 						static_cast<uint32_t>(M[TI[k].I[i].Mid]->indices.size()), 1, 0, 0, 0);
 			}
