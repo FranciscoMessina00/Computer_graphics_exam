@@ -103,6 +103,7 @@ class E09 : public BaseProject {
 	glm::mat4 World;
 	glm::vec3 Pos = glm::vec3(0,0,5);
 	glm::vec3 cameraPos;
+	glm::vec3 cameraLookAt = glm::vec3(0.0f);
 	float Yaw = glm::radians(0.0f);
 	float Pitch = glm::radians(0.0f);
 	float Roll = glm::radians(0.0f);
@@ -116,6 +117,16 @@ class E09 : public BaseProject {
 	std::uniform_real_distribution<float> distX;
 	std::uniform_real_distribution<float> distY;
 	std::uniform_real_distribution<float> distZ;
+
+	// Indici per l'aereo
+	int airplaneTechIdx = -1;
+	int airplaneInstIdx = -1;
+
+	// Variabili per il controllo dell'aereo
+	glm::vec3 airplanePosition;
+	glm::quat airplaneOrientation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
+	glm::vec3 airplaneScale = glm::vec3(1.0f);
+	bool airplaneInitialized = false;
 
 
 	// Here you set the main application parameters
@@ -343,6 +354,27 @@ std::cout << "\nLoading the scene\n\n";
 			std::cout << "ERROR LOADING THE SCENE\n";
 			exit(0);
 		}
+
+		// Cerca l'indice della tecnica e dell'istanza dell'aereo
+		for (int i = 0; i < PRs.size(); i++) {
+			for (int j = 0; j < SC.TI[i].InstanceCount; j++) {
+				if (SC.TI[i].I[j].id != nullptr && *(SC.TI[i].I[j].id) == "ap") {
+					airplaneTechIdx = i;
+					airplaneInstIdx = j;
+					break;
+				}
+			}
+			if (airplaneTechIdx != -1) {
+				break;
+			}
+		}
+
+		if (airplaneTechIdx != -1) {
+			std::cout << "Airplane 'ap' found at Technique " << airplaneTechIdx << ", Instance " << airplaneInstIdx << "\n";
+		} else {
+			std::cout << "WARNING: Airplane 'ap' not found in scene.\n";
+		}
+
 		// initializes animations
 		for(int ian = 0; ian < N_ANIMATIONS; ian++) {
 			Anim[ian].init(*SC.As[ian]);
@@ -449,341 +481,447 @@ std::cout << "\nLoading the scene\n\n";
 		RP.end(commandBuffer);
 	}
 
+	void updateAirplane(float deltaT)
+	{
+
+	}
+
+
 	// Here is where you update the uniforms.
 	// Very likely this will be where you will be writing the logic of your application.
 	void updateUniformBuffer(uint32_t currentImage) {
-		// std::cout << "Inside uniform buffer!";
 		static bool debounce = false;
 		static int curDebounce = 0;
-		
-		// handle the ESC key to exit the app
-		if(glfwGetKey(window, GLFW_KEY_ESCAPE)) {
-			glfwSetWindowShouldClose(window, GL_TRUE);
-		}
-
-
-		if(glfwGetKey(window, GLFW_KEY_1)) {
-			if(!debounce) {
-				debounce = true;
-				curDebounce = GLFW_KEY_1;
-
-				debug1.x = 1.0 - debug1.x;
-			}
-		} else {
-			if((curDebounce == GLFW_KEY_1) && debounce) {
-				debounce = false;
-				curDebounce = 0;
-			}
-		}
-
-		if(glfwGetKey(window, GLFW_KEY_2)) {
-			if(!debounce) {
-				debounce = true;
-				curDebounce = GLFW_KEY_2;
-
-				debug1.y = 1.0 - debug1.y;
-			}
-		} else {
-			if((curDebounce == GLFW_KEY_2) && debounce) {
-				debounce = false;
-				curDebounce = 0;
-			}
-		}
-
-		if(glfwGetKey(window, GLFW_KEY_P)) {
-			if(!debounce) {
-				debounce = true;
-				curDebounce = GLFW_KEY_P;
-
-				debug1.z = (float)(((int)debug1.z + 1) % 65);
-std::cout << "Showing bone index: " << debug1.z << "\n";
-			}
-		} else {
-			if((curDebounce == GLFW_KEY_P) && debounce) {
-				debounce = false;
-				curDebounce = 0;
-			}
-		}
-
-		if(glfwGetKey(window, GLFW_KEY_O)) {
-			if(!debounce) {
-				debounce = true;
-				curDebounce = GLFW_KEY_O;
-
-				debug1.z = (float)(((int)debug1.z + 64) % 65);
-std::cout << "Showing bone index: " << debug1.z << "\n";
-			}
-		} else {
-			if((curDebounce == GLFW_KEY_O) && debounce) {
-				debounce = false;
-				curDebounce = 0;
-			}
-		}
-
-		static int curAnim = 0;
-		if(glfwGetKey(window, GLFW_KEY_SPACE)) {
-			if(!debounce) {
-				debounce = true;
-				curDebounce = GLFW_KEY_SPACE;
-
-				curAnim = (curAnim + 1) % 5;
-				AB.Start(curAnim, 0.5);
-std::cout << "Playing anim: " << curAnim << "\n";
-			}
-		} else {
-			if((curDebounce == GLFW_KEY_SPACE) && debounce) {
-				debounce = false;
-				curDebounce = 0;
-			}
-		}
-
-		// press H to re‐randomize
-		if (glfwGetKey(window, GLFW_KEY_H)) {
-			if(!debounce) {
-				debounce = true;
-				curDebounce = GLFW_KEY_H;
-				for (auto& M: gemWorlds) {
-					glm::vec3 p{distX(rng), distY(rng), distZ(rng)};
-					M = glm::translate(glm::mat4(1.0f), p)
-					  * glm::scale(glm::mat4(1.0f), glm::vec3(0.025f));
-				}
-			}
-		} else {
-			if((curDebounce == GLFW_KEY_H) && debounce) {
-				debounce = false;
-				curDebounce = 0;
-			}
-		}
-
-		// moves the view
-		float deltaT = GameLogic();
-		// spin speed: one full revolution every 5 seconds
-		const float GEM_SPIN_SPEED = glm::two_pi<float>() / 5.0f;
-		gemAngle += GEM_SPIN_SPEED * deltaT;
-		// keep it in [0,2π) if you like
-		if (gemAngle > glm::two_pi<float>()) gemAngle -= glm::two_pi<float>();
-		
-		// updated the animation
-		const float SpeedUpAnimFact = 0.85f;
-		AB.Advance(deltaT * SpeedUpAnimFact);
-		
-		// defines the global parameters for the uniform
-		const glm::mat4 lightView = glm::rotate(glm::mat4(1), glm::radians(-30.0f), glm::vec3(0.0f,1.0f,0.0f)) * glm::rotate(glm::mat4(1), glm::radians(-45.0f), glm::vec3(1.0f,0.0f,0.0f));
-		const glm::vec3 lightDir = glm::vec3(lightView * glm::vec4(0.0f, 0.0f, 1.0f, 1.0f));
-	
-		GlobalUniformBufferObject gubo{};
-
-		gubo.lightDir = lightDir;
-		gubo.lightColor = glm::vec4(1.0f, 1.0f, 1.0f, 1.0f);
-		gubo.eyePos = cameraPos;
-
-		// defines the local parameters for the uniforms
-		UniformBufferObjectChar uboc{};	
-		uboc.debug1 = debug1;
-
-		SKA.Sample(AB);
-		std::vector<glm::mat4> *TMsp = SKA.getTransformMatrices();
-		
-//printMat4("TF[55]", (*TMsp)[55]);
-		
-		glm::mat4 AdaptMat =
-			glm::scale(glm::mat4(1.0f), glm::vec3(0.01f)) *
-			glm::rotate(glm::mat4(1.0f), glm::radians(90.0f), glm::vec3(1.0f,0.0f,0.0f));
-		
-		int instanceId;
-		// character
-		for(instanceId = 0; instanceId < SC.TI[0].InstanceCount; instanceId++) {
-			for(int im = 0; im < TMsp->size(); im++) {
-				uboc.mMat[im]   = AdaptMat * (*TMsp)[im];
-				uboc.mvpMat[im] = ViewPrj * uboc.mMat[im];
-				uboc.nMat[im] = glm::inverse(glm::transpose(uboc.mMat[im]));
-//std::cout << im << "\t";
-//printMat4("mMat", ubo.mMat[im]);
-			}
-
-			SC.TI[0].I[instanceId].DS[0][0]->map(currentImage, &gubo, 0); // Set 0
-			SC.TI[0].I[instanceId].DS[0][1]->map(currentImage, &uboc, 0);  // Set 1
-		}
-
-		UniformBufferObjectSimp ubos{};	
-		// normal objects
-		for(instanceId = 0; instanceId < SC.TI[1].InstanceCount; instanceId++) {
-			ubos.mMat   = SC.TI[1].I[instanceId].Wm;
-			ubos.mvpMat = ViewPrj * ubos.mMat;
-			ubos.nMat   = glm::inverse(glm::transpose(ubos.mMat));
-
-			SC.TI[1].I[instanceId].DS[0][0]->map(currentImage, &gubo, 0); // Set 0
-			SC.TI[1].I[instanceId].DS[0][1]->map(currentImage, &ubos, 0);  // Set 1
-		}
-
-		UniformBufferObjectSimp uboGem{};
-		// then spin around Y by gemAngle, in object‐local space:
-		glm::mat4 spinY = glm::rotate(glm::mat4(1.0f),
-									  gemAngle,
-									  glm::vec3(0,1,0));
-		for(instanceId = 0; instanceId < SC.TI[2].InstanceCount; instanceId++) {
-			uboGem.mMat   = gemWorlds[instanceId]
-				* spinY
-				* glm::rotate(glm::mat4(1.0f), glm::radians(90.0f), glm::vec3(1, 0, 0))
-				* glm::scale(glm::mat4(1.0f), glm::vec3(0.5f));
-			uboGem.mvpMat = ViewPrj * uboGem.mMat;
-			uboGem.nMat   = glm::inverse(glm::transpose(uboGem.mMat));
-
-			SC.TI[2].I[instanceId].DS[0][0]->map(currentImage, &gubo, 0); // Set 0
-			SC.TI[2].I[instanceId].DS[0][1]->map(currentImage, &uboGem, 0);  // Set 1
-		}
-		// skybox pipeline
-		skyBoxUniformBufferObject sbubo{};
-		sbubo.mvpMat = ViewPrj * glm::translate(glm::mat4(1), cameraPos) * glm::scale(glm::mat4(1), glm::vec3(100.0f));
-		SC.TI[3].I[0].DS[0][0]->map(currentImage, &sbubo, 0);
-
-		// PBR objects
-		for(instanceId = 0; instanceId < SC.TI[4].InstanceCount; instanceId++) {
-			ubos.mMat   = SC.TI[4].I[instanceId].Wm;
-			ubos.mvpMat = ViewPrj * ubos.mMat;
-			ubos.nMat   = glm::inverse(glm::transpose(ubos.mMat));
-
-			SC.TI[4].I[instanceId].DS[0][0]->map(currentImage, &gubo, 0); // Set 0
-			SC.TI[4].I[instanceId].DS[0][1]->map(currentImage, &ubos, 0);  // Set 1
-		}
-
-		// updates the FPS
-		static float elapsedT = 0.0f;
-		static int countedFrames = 0;
-		
-		countedFrames++;
-		elapsedT += deltaT;
-		if(elapsedT > 1.0f) {
-			float Fps = (float)countedFrames / elapsedT;
-			
-			std::ostringstream oss;
-			oss << "FPS: " << Fps << "\n";
-
-			txt.print(1.0f, 1.0f, oss.str(), 1, "CO", false, false, true,TAL_RIGHT,TRH_RIGHT,TRV_BOTTOM,{1.0f,0.0f,0.0f,1.0f},{0.8f,0.8f,0.0f,1.0f});
-			
-			elapsedT = 0.0f;
-		    countedFrames = 0;
-		}
-		
-		txt.updateCommandBuffer();
-	}
-	
-	float GameLogic() {
-		// Parameters
-		// Camera FOV-y, Near Plane and Far Plane
-		const float FOVy = glm::radians(45.0f);
-		const float nearPlane = 0.1f;
-		const float farPlane = 100.f;
-		// Player starting point
-		const glm::vec3 StartingPosition = glm::vec3(0.0, 0.0, 5);
-		// Camera target height and distance
-		static float camHeight = 1.5;
-		static float camDist = 5;
-		// Camera Pitch limits
-		const float minPitch = glm::radians(-8.75f);
-		const float maxPitch = glm::radians(60.0f);
-		// Rotation and motion speed
-		const float ROT_SPEED = glm::radians(120.0f);
-		const float MOVE_SPEED_BASE = 2.0f;
-		const float MOVE_SPEED_RUN  = 5.0f;
-		const float ZOOM_SPEED = MOVE_SPEED_BASE * 1.5f;
-		const float MAX_CAM_DIST =  7.5;
-		const float MIN_CAM_DIST =  1.5;
-
-		// Integration with the timers and the controllers
 		float deltaT;
 		glm::vec3 m = glm::vec3(0.0f), r = glm::vec3(0.0f);
 		bool fire = false;
 		getSixAxis(deltaT, m, r, fire);
-		float MOVE_SPEED = fire ? MOVE_SPEED_RUN : MOVE_SPEED_BASE;
 
 
-		// Game Logic implementation
-		// Current Player Position - statc variable make sure its value remain unchanged in subsequent calls to the procedure
-		static glm::vec3 Pos = StartingPosition;
-		static glm::vec3 oldPos;
-		static int currRunState = 1;
-
-/*		camDist = camDist - m.y * ZOOM_SPEED * deltaT;
-		camDist = camDist < MIN_CAM_DIST ? MIN_CAM_DIST :
-				 (camDist > MAX_CAM_DIST ? MAX_CAM_DIST : camDist);*/
-		camDist = (MIN_CAM_DIST + MIN_CAM_DIST) / 2.0f; 
-
-		// To be done in the assignment
-		ViewPrj = glm::mat4(1);
-		World = glm::mat4(1);
-
-		oldPos = Pos;
-
-		static float Yaw = glm::radians(0.0f);
-		static float Pitch = glm::radians(0.0f);
-		static float relDir = glm::radians(0.0f);
-		static float dampedRelDir = glm::radians(0.0f);
-		static glm::vec3 dampedCamPos = StartingPosition;
-		
-		// World
-		// Position
-		glm::vec3 ux = glm::rotate(glm::mat4(1.0f), Yaw, glm::vec3(0,1,0)) * glm::vec4(1,0,0,1);
-		glm::vec3 uz = glm::rotate(glm::mat4(1.0f), Yaw, glm::vec3(0,1,0)) * glm::vec4(0,0,-1,1);
-		Pos = Pos + MOVE_SPEED * m.x * ux * deltaT;
-		Pos = Pos - MOVE_SPEED * m.z * uz * deltaT;
-		
-		camHeight += MOVE_SPEED * m.y * deltaT;
-		// Rotation
-		Yaw = Yaw - ROT_SPEED * deltaT * r.y;
-		Pitch = Pitch - ROT_SPEED * deltaT * r.x;
-		Pitch  =  Pitch < minPitch ? minPitch :
-				   (Pitch > maxPitch ? maxPitch : Pitch);
-
-
-		float ef = exp(-10.0 * deltaT);
-		// Rotational independence from view with damping
-		if(glm::length(glm::vec3(m.x, 0.0f, m.z)) > 0.001f) {
-			relDir = Yaw + atan2(m.x, m.z);
-			dampedRelDir = dampedRelDir > relDir + 3.1416f ? dampedRelDir - 6.28f :
-						   dampedRelDir < relDir - 3.1416f ? dampedRelDir + 6.28f : dampedRelDir;
+		// handle the ESC key to exit the app
+		if(glfwGetKey(window, GLFW_KEY_ESCAPE)) {
+		glfwSetWindowShouldClose(window, GL_TRUE);
 		}
-		dampedRelDir = ef * dampedRelDir + (1.0f - ef) * relDir;
-		
-		// Final world matrix computaiton
-		World = glm::translate(glm::mat4(1), Pos) * glm::rotate(glm::mat4(1.0f), dampedRelDir, glm::vec3(0,1,0));
-		
-		// Projection
-		glm::mat4 Prj = glm::perspective(FOVy, Ar, nearPlane, farPlane);
-		Prj[1][1] *= -1;
 
-		// View
-		// Target
-		glm::vec3 target = Pos + glm::vec3(0.0f, camHeight, 0.0f);
+		// --- Logica di inizializzazione dell'aereo (una tantum) ---
+		if (airplaneTechIdx != -1 && !airplaneInitialized) {
+			const glm::mat4& initialWm = SC.TI[airplaneTechIdx].I[airplaneInstIdx].Wm;
 
-		// Camera position, depending on Yaw parameter, but not character direction
-		glm::mat4 camWorld = glm::translate(glm::mat4(1), Pos) * glm::rotate(glm::mat4(1.0f), Yaw, glm::vec3(0,1,0));
-		cameraPos = camWorld * glm::vec4(0.0f, camHeight + camDist * sin(Pitch), camDist * cos(Pitch), 1.0);
-		// Damping of camera
-		dampedCamPos = ef * dampedCamPos + (1.0f - ef) * cameraPos;
+			airplanePosition = glm::vec3(initialWm[3]);
 
-		glm::mat4 View = glm::lookAt(dampedCamPos, target, glm::vec3(0,1,0));
+			airplaneScale.x = glm::length(glm::vec3(initialWm[0]));
+			airplaneScale.y = glm::length(glm::vec3(initialWm[1]));
+			airplaneScale.z = glm::length(glm::vec3(initialWm[2]));
 
-		ViewPrj = Prj * View;
-		
-		float vel = length(Pos - oldPos) / deltaT;
-		
-		if(vel < 0.2) {
-			if(currRunState != 1) {
-				currRunState = 1;
-			}
-		} else if(vel < 3.5) {
-			if(currRunState != 2) {
-				currRunState = 2;
-			}
+			if (airplaneScale.x == 0.0f) airplaneScale.x = 1.0f;
+			if (airplaneScale.y == 0.0f) airplaneScale.y = 1.0f;
+			if (airplaneScale.z == 0.0f) airplaneScale.z = 1.0f;
+
+			glm::mat3 rotationPart = glm::mat3(initialWm);
+			rotationPart[0] /= airplaneScale.x;
+			rotationPart[1] /= airplaneScale.y;
+			rotationPart[2] /= airplaneScale.z;
+			airplaneOrientation = glm::normalize(glm::quat_cast(rotationPart));
+
+			airplaneInitialized = true;
+		}
+
+		// --- Logica di aggiornamento stato dell'aereo ---
+		if (airplaneInitialized) {
+		    // --- Costanti di movimento e controllo ---
+		    const float AIRPLANE_FORWARD_SPEED = 7.0f;
+		    const float AIRPLANE_ROLL_RATE = glm::radians(120.0f);     // Velocità di rollio quando si preme A/D
+		    const float MAX_ROLL_ANGLE = glm::radians(45.0f);          // Angolo massimo di rollio
+		    const float TURN_RATE_FACTOR = 1.2f;                       // Fattore di conversione da rollio a virata
+		    const float AUTO_LEVEL_STRENGTH = 2.0f;                    // Quanto velocemente l'aereo si livella
+		    const float PITCH_RATE = glm::radians(45.0f);              // Velocità di beccheggio per W/S
+
+		    // Input di controllo
+		    float pitchInput = 0.0f;
+		    float rollInput = 0.0f;
+
+		    // W/S per il beccheggio (su/giù)
+		    if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) pitchInput += PITCH_RATE;
+		    if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) pitchInput -= PITCH_RATE;
+
+		    // A/D per il rollio (correzione: A a sinistra, D a destra)
+		    if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) rollInput -= AIRPLANE_ROLL_RATE; // Sinistra (-)
+		    if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) rollInput += AIRPLANE_ROLL_RATE; // Destra (+)
+
+		    // --- Estrai gli assi locali dell'aereo ---
+		    glm::vec3 localForward = airplaneOrientation * glm::vec3(-1.0f, 0.0f, 0.0f); // -X è avanti
+		    glm::vec3 localRight = airplaneOrientation * glm::vec3(0.0f, 1.0f, 0.0f);    // Y è destra
+		    glm::vec3 localUp = airplaneOrientation * glm::vec3(0.0f, 0.0f, 1.0f);       // Z è su
+
+		    // --- Calcolo dell'angolo di rollio attuale ---
+		    // Proietta il vettore "destra" dell'aereo sul piano orizzontale
+		    glm::vec3 rightHorizontal = glm::normalize(glm::vec3(localRight.x, localRight.y, 0.0f));
+		    float currentRollAngle = glm::asin(glm::clamp(localRight.z, -1.0f, 1.0f));
+
+		    // --- Calcolo delle velocità di rotazione ---
+		    float rollRate = 0.0f;
+		    float yawRate = 0.0f;
+
+		    // 1. Applica l'input di rollio (con limiti)
+		    if (rollInput != 0.0f) {
+		        // Limita il rollio in base all'angolo massimo
+		        if ((rollInput < 0 && currentRollAngle > -MAX_ROLL_ANGLE) ||
+		            (rollInput > 0 && currentRollAngle < MAX_ROLL_ANGLE)) {
+		            rollRate = rollInput;
+		        }
+		    } else {
+		        // Auto-livellamento: ritorna gradualmente a livello quando non c'è input
+		        rollRate = -currentRollAngle * AUTO_LEVEL_STRENGTH;
+		    }
+
+		    // 2. La virata (yaw) è proporzionale all'angolo di rollio
+		    // Nota: il segno negativo fa sì che l'aereo viri nella direzione corretta
+		    yawRate = -currentRollAngle * TURN_RATE_FACTOR;
+
+		    // --- Applica le rotazioni ---
+		    glm::quat pitchRotation = glm::angleAxis(pitchInput * deltaT, glm::vec3(0.0f, 1.0f, 0.0f));
+		    glm::quat rollRotation = glm::angleAxis(rollRate * deltaT, glm::vec3(1.0f, 0.0f, 0.0f));
+		    glm::quat yawRotation = glm::angleAxis(yawRate * deltaT, glm::vec3(0.0f, 0.0f, 1.0f));
+
+		    // Applica le rotazioni nell'ordine corretto (roll -> pitch -> yaw)
+		    airplaneOrientation = airplaneOrientation * rollRotation * pitchRotation * yawRotation;
+		    airplaneOrientation = glm::normalize(airplaneOrientation);
+
+		    // --- Movimento avanti costante ---
+		    airplanePosition += localForward * (AIRPLANE_FORWARD_SPEED * deltaT);
+
+		    // Aggiorna la matrice del mondo
+		    glm::mat4 rotationMatrix = glm::mat4_cast(airplaneOrientation);
+		    glm::mat4 translationMatrix = glm::translate(glm::mat4(1.0f), airplanePosition);
+		    glm::mat4 scaleMatrix = glm::scale(glm::mat4(1.0f), airplaneScale);
+		    SC.TI[airplaneTechIdx].I[airplaneInstIdx].Wm = translationMatrix * rotationMatrix * scaleMatrix;
+		}
+
+		// --- Calcolo Matrice di Vista (Camera) ---
+		glm::mat4 Mv;
+		if (airplaneInitialized) {
+			// --- Logica di interpolazione della camera ---
+			const float cameraSmoothingSpeed = 4.0f; // Valore più alto = camera più reattiva, meno "morbida"
+
+			// 1. Calcola la posizione e il target DESIDERATI per la camera
+			glm::vec3 cameraOffsetLocal = glm::vec3(10.0f, 0.0f, 5.5f);
+			glm::vec3 targetCameraPos = airplanePosition + (airplaneOrientation * cameraOffsetLocal);
+			glm::vec3 targetLookAt = airplanePosition;
+
+			// 2. Calcola il fattore di interpolazione basato su deltaT per un movimento omogeneo
+			// Questo approccio garantisce che la fluidità sia indipendente dal framerate
+			float interpolationFactor = 1.0f - glm::exp(-cameraSmoothingSpeed * deltaT);
+
+			// 3. Interpola la posizione e il target attuali della camera verso quelli desiderati
+			cameraPos = glm::mix(cameraPos, targetCameraPos, interpolationFactor);
+			cameraLookAt = glm::mix(cameraLookAt, targetLookAt, interpolationFactor);
+
+			// 4. Calcola il vettore "up" basato sull'orientamento dell'aereo
+			glm::vec3 cameraUp = glm::normalize(airplaneOrientation * glm::vec3(0.0f, 0.0f, 1.0f));
+
+			// 5. Crea la matrice di vista usando le posizioni interpolate
+			Mv = glm::lookAt(cameraPos, cameraLookAt, cameraUp);
 		} else {
-			if(currRunState != 3) {
-				currRunState = 3;
-			}
+			// Camera in prima persona (fallback)
+			Mv = glm::rotate(glm::mat4(1.0), -Pitch, glm::vec3(1,0,0)) *
+				 glm::rotate(glm::mat4(1.0), -Yaw, glm::vec3(0,1,0)) *
+				 glm::translate(glm::mat4(1.0), -cameraPos);
 		}
-		
-		return deltaT;
-	}
+
+
+		// Calcolo Matrice di Proiezione e View-Projection
+		glm::mat4 M = glm::perspective(glm::radians(45.0f), Ar, 0.1f, 100.f);
+		M[1][1] *= -1;
+		ViewPrj = M * Mv;
+
+		if(glfwGetKey(window, GLFW_KEY_1)) {
+		if(!debounce) {
+		debounce = true;
+		curDebounce = GLFW_KEY_1;
+		debug1.x = 1.0 - debug1.x;
+		}
+		} else {
+		if((curDebounce == GLFW_KEY_1) && debounce) {
+		debounce = false;
+		curDebounce = 0;
+		}
+		}
+
+		if(glfwGetKey(window, GLFW_KEY_2)) {
+		if(!debounce) {
+		debounce = true;
+		curDebounce = GLFW_KEY_2;
+		debug1.y = 1.0 - debug1.y;
+		}
+		} else {
+		if((curDebounce == GLFW_KEY_2) && debounce) {
+		debounce = false;
+		curDebounce = 0;
+		}
+		}
+
+		if(glfwGetKey(window, GLFW_KEY_P)) {
+		if(!debounce) {
+		debounce = true;
+		curDebounce = GLFW_KEY_P;
+		debug1.z = (float)(((int)debug1.z + 1) % 65);
+		std::cout << "Showing bone index: " << debug1.z << "\n";
+		}
+		} else {
+		if((curDebounce == GLFW_KEY_P) && debounce) {
+		debounce = false;
+		curDebounce = 0;
+		}
+		}
+
+		if(glfwGetKey(window, GLFW_KEY_O)) {
+		if(!debounce) {
+		debounce = true;
+		curDebounce = GLFW_KEY_O;
+		debug1.z = (float)(((int)debug1.z + 64) % 65);
+		std::cout << "Showing bone index: " << debug1.z << "\n";
+		}
+		} else {
+		if((curDebounce == GLFW_KEY_O) && debounce) {
+		debounce = false;
+		curDebounce = 0;
+		}
+		}
+
+		static int curAnim = 0;
+		if(glfwGetKey(window, GLFW_KEY_SPACE)) {
+		if(!debounce) {
+		debounce = true;
+		curDebounce = GLFW_KEY_SPACE;
+		curAnim = (curAnim + 1) % 5;
+		AB.Start(curAnim, 0.5);
+		std::cout << "Playing anim: " << curAnim << "\n";
+		}
+		} else {
+		if((curDebounce == GLFW_KEY_SPACE) && debounce) {
+		debounce = false;
+		curDebounce = 0;
+		}
+		}
+
+		if (glfwGetKey(window, GLFW_KEY_H)) {
+		if(!debounce) {
+		debounce = true;
+		curDebounce = GLFW_KEY_H;
+		for (auto& M: gemWorlds) {
+		 glm::vec3 p{distX(rng), distY(rng), distZ(rng)};
+		 M = glm::translate(glm::mat4(1.0f), p)
+		   * glm::scale(glm::mat4(1.0f), glm::vec3(0.025f));
+		}
+		}
+		} else {
+		if((curDebounce == GLFW_KEY_H) && debounce) {
+		debounce = false;
+		curDebounce = 0;
+		}
+		}
+
+
+
+
+
+			// spin speed: one full revolution every 5 seconds
+			const float GEM_SPIN_SPEED = glm::two_pi<float>() / 5.0f;
+			gemAngle += GEM_SPIN_SPEED * deltaT;
+			if (gemAngle > glm::two_pi<float>()) gemAngle -= glm::two_pi<float>();
+
+			// updated the animation
+			const float SpeedUpAnimFact = 0.85f;
+			AB.Advance(deltaT * SpeedUpAnimFact);
+
+			// defines the global parameters for the uniform
+			const glm::mat4 lightView = glm::rotate(glm::mat4(1), glm::radians(-30.0f), glm::vec3(0.0f,1.0f,0.0f)) * glm::rotate(glm::mat4(1), glm::radians(-45.0f), glm::vec3(1.0f,0.0f,0.0f));
+			const glm::vec3 lightDir = glm::vec3(lightView * glm::vec4(0.0f, 0.0f, 1.0f, 1.0f));
+
+			GlobalUniformBufferObject gubo{};
+			gubo.lightDir = lightDir;
+			gubo.lightColor = glm::vec4(1.0f, 1.0f, 1.0f, 1.0f);
+			gubo.eyePos = cameraPos;
+
+			// defines the local parameters for the uniforms
+			UniformBufferObjectChar uboc{};
+			uboc.debug1 = debug1;
+
+			SKA.Sample(AB);
+			std::vector<glm::mat4> *TMsp = SKA.getTransformMatrices();
+
+			glm::mat4 AdaptMat =
+				glm::scale(glm::mat4(1.0f), glm::vec3(0.01f)) *
+				glm::rotate(glm::mat4(1.0f), glm::radians(90.0f), glm::vec3(1.0f,0.0f,0.0f));
+
+			int instanceId;
+			// character
+			for(instanceId = 0; instanceId < SC.TI[0].InstanceCount; instanceId++) {
+				for(int im = 0; im < TMsp->size(); im++) {
+					uboc.mMat[im]   = AdaptMat * (*TMsp)[im];
+					uboc.mvpMat[im] = ViewPrj * uboc.mMat[im];
+					uboc.nMat[im] = glm::inverse(glm::transpose(uboc.mMat[im]));
+				}
+				SC.TI[0].I[instanceId].DS[0][0]->map(currentImage, &gubo, 0);
+				SC.TI[0].I[instanceId].DS[0][1]->map(currentImage, &uboc, 0);
+			}
+
+			UniformBufferObjectSimp ubos{};
+			// normal objects
+			for(instanceId = 0; instanceId < SC.TI[1].InstanceCount; instanceId++) {
+				ubos.mMat   = SC.TI[1].I[instanceId].Wm;
+				ubos.mvpMat = ViewPrj * ubos.mMat;
+				ubos.nMat   = glm::inverse(glm::transpose(ubos.mMat));
+				SC.TI[1].I[instanceId].DS[0][0]->map(currentImage, &gubo, 0);
+				SC.TI[1].I[instanceId].DS[0][1]->map(currentImage, &ubos, 0);
+			}
+
+			UniformBufferObjectSimp uboGem{};
+			glm::mat4 spinY = glm::rotate(glm::mat4(1.0f), gemAngle, glm::vec3(0,1,0));
+			for(instanceId = 0; instanceId < SC.TI[2].InstanceCount; instanceId++) {
+				uboGem.mMat   = gemWorlds[instanceId] * spinY * glm::rotate(glm::mat4(1.0f), glm::radians(90.0f), glm::vec3(1, 0, 0)) * glm::scale(glm::mat4(1.0f), glm::vec3(0.5f));
+				uboGem.mvpMat = ViewPrj * uboGem.mMat;
+				uboGem.nMat   = glm::inverse(glm::transpose(uboGem.mMat));
+				SC.TI[2].I[instanceId].DS[0][0]->map(currentImage, &gubo, 0);
+				SC.TI[2].I[instanceId].DS[0][1]->map(currentImage, &uboGem, 0);
+			}
+
+			// skybox pipeline
+			skyBoxUniformBufferObject sbubo{};
+			sbubo.mvpMat = ViewPrj * glm::translate(glm::mat4(1), cameraPos) * glm::scale(glm::mat4(1), glm::vec3(100.0f));
+			SC.TI[3].I[0].DS[0][0]->map(currentImage, &sbubo, 0);
+
+			// PBR objects (incluso l'aereo la cui Wm è stata aggiornata)
+			for(instanceId = 0; instanceId < SC.TI[4].InstanceCount; instanceId++) {
+				ubos.mMat   = SC.TI[4].I[instanceId].Wm;
+				ubos.mvpMat = ViewPrj * ubos.mMat;
+				ubos.nMat   = glm::inverse(glm::transpose(ubos.mMat));
+				SC.TI[4].I[instanceId].DS[0][0]->map(currentImage, &gubo, 0);
+				SC.TI[4].I[instanceId].DS[0][1]->map(currentImage, &ubos, 0);
+			}
+
+			// updates the FPS
+			static float elapsedT = 0.0f;
+			static int countedFrames = 0;
+			countedFrames++;
+			elapsedT += deltaT;
+			if(elapsedT > 1.0f) {
+				float Fps = (float)countedFrames / elapsedT;
+				std::ostringstream oss;
+				oss << "FPS: " << Fps << "\n";
+				txt.print(1.0f, 1.0f, oss.str(), 1, "CO", false, false, true,TAL_RIGHT,TRH_RIGHT,TRV_BOTTOM,{1.0f,0.0f,0.0f,1.0f},{0.8f,0.8f,0.0f,1.0f});
+				elapsedT = 0.0f;
+				countedFrames = 0;
+			}
+			txt.updateCommandBuffer();
+		}
+		float GameLogic() {
+  // Integration with the timers and the controllers
+  /*float deltaT;
+  glm::vec3 m = glm::vec3(0.0f), r = glm::vec3(0.0f);
+  bool fire = false;
+  getSixAxis(deltaT, m, r, fire);
+
+  // Camera FOV-y, Near Plane and Far Plane
+  const float FOVy = glm::radians(45.0f);
+  const float nearPlane = 0.1f;
+  const float farPlane = 100.f;
+
+  if (airplaneInitialized) {
+   // --- Logica della telecamera in terza persona per l'aereo ---
+   // Definisce l'offset della telecamera rispetto all'aereo (spazio locale)
+   glm::vec3 cameraOffsetLocal = glm::vec3(10.0f, 0.0f, 5.5f);
+
+   // Trasforma l'offset nello spazio globale usando l'orientamento dell'aereo
+   glm::vec3 worldOffset = airplaneOrientation * cameraOffsetLocal;
+
+   // Calcola la posizione della telecamera e dove guardare
+   cameraPos = airplanePosition + worldOffset;
+   glm::vec3 lookAtTarget = airplanePosition;
+
+   // Definisce il vettore "up" della telecamera, basato sull'up locale dell'aereo
+   glm::vec3 cameraUp = glm::normalize(airplaneOrientation * glm::vec3(0.0f, 0.0f, 1.0f));
+
+   // Costruisce le matrici di proiezione e vista
+   glm::mat4 Prj = glm::perspective(FOVy, Ar, nearPlane, farPlane);
+   Prj[1][1] *= -1;
+   glm::mat4 View = glm::lookAt(cameraPos, lookAtTarget, cameraUp);
+
+   // Aggiorna la matrice finale e la matrice del mondo (non usata in questa modalità)
+   ViewPrj = Prj * View;
+   World = glm::mat4(1.0f);
+
+  } else {
+   // --- Logica originale della telecamera per il personaggio ---
+   const glm::vec3 StartingPosition = glm::vec3(0.0, 0.0, 5);
+   static float camHeight = 1.5;
+   static float camDist = 5;
+   const float minPitch = glm::radians(-8.75f);
+   const float maxPitch = glm::radians(60.0f);
+   const float ROT_SPEED = glm::radians(120.0f);
+   const float MOVE_SPEED_BASE = 2.0f;
+   const float MOVE_SPEED_RUN  = 5.0f;
+   float MOVE_SPEED = fire ? MOVE_SPEED_RUN : MOVE_SPEED_BASE;
+
+   static glm::vec3 Pos = StartingPosition;
+   static glm::vec3 oldPos;
+   static int currRunState = 1;
+
+   camDist = 5.0f; // Distanza fissa
+
+   ViewPrj = glm::mat4(1);
+   World = glm::mat4(1);
+   oldPos = Pos;
+
+   static float Yaw = glm::radians(0.0f);
+   static float Pitch = glm::radians(0.0f);
+   static float relDir = glm::radians(0.0f);
+   static float dampedRelDir = glm::radians(0.0f);
+   static glm::vec3 dampedCamPos = StartingPosition;
+
+   glm::vec3 ux = glm::rotate(glm::mat4(1.0f), Yaw, glm::vec3(0,1,0)) * glm::vec4(1,0,0,1);
+   glm::vec3 uz = glm::rotate(glm::mat4(1.0f), Yaw, glm::vec3(0,1,0)) * glm::vec4(0,0,-1,1);
+   Pos = Pos + MOVE_SPEED * m.x * ux * deltaT;
+   Pos = Pos - MOVE_SPEED * m.z * uz * deltaT;
+   camHeight += MOVE_SPEED * m.y * deltaT;
+
+   Yaw = Yaw - ROT_SPEED * deltaT * r.y;
+   Pitch = Pitch - ROT_SPEED * deltaT * r.x;
+   Pitch  =  Pitch < minPitch ? minPitch : (Pitch > maxPitch ? maxPitch : Pitch);
+
+   float ef = exp(-10.0 * deltaT);
+   if(glm::length(glm::vec3(m.x, 0.0f, m.z)) > 0.001f) {
+    relDir = Yaw + atan2(m.x, m.z);
+    dampedRelDir = dampedRelDir > relDir + 3.1416f ? dampedRelDir - 6.28f :
+          dampedRelDir < relDir - 3.1416f ? dampedRelDir + 6.28f : dampedRelDir;
+   }
+   dampedRelDir = ef * dampedRelDir + (1.0f - ef) * relDir;
+
+   World = glm::translate(glm::mat4(1), Pos) * glm::rotate(glm::mat4(1.0f), dampedRelDir, glm::vec3(0,1,0));
+
+   glm::mat4 Prj = glm::perspective(FOVy, Ar, nearPlane, farPlane);
+   Prj[1][1] *= -1;
+
+   glm::vec3 target = Pos + glm::vec3(0.0f, camHeight, 0.0f);
+   glm::mat4 camWorld = glm::translate(glm::mat4(1), Pos) * glm::rotate(glm::mat4(1.0f), Yaw, glm::vec3(0,1,0));
+   cameraPos = camWorld * glm::vec4(0.0f, camHeight + camDist * sin(Pitch), camDist * cos(Pitch), 1.0);
+   dampedCamPos = ef * dampedCamPos + (1.0f - ef) * cameraPos;
+   glm::mat4 View = glm::lookAt(dampedCamPos, target, glm::vec3(0,1,0));
+
+   ViewPrj = Prj * View;
+
+   float vel = length(Pos - oldPos) / deltaT;
+   if(vel < 0.2) {
+    if(currRunState != 1) currRunState = 1;
+   } else if(vel < 3.5) {
+    if(currRunState != 2) currRunState = 2;
+   } else {
+    if(currRunState != 3) currRunState = 3;
+   }
+  }
+
+  return deltaT;*/
+ }
 };
 
 
