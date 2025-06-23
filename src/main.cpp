@@ -126,6 +126,10 @@ protected:
     glm::vec4 debug1 = glm::vec4(0);
 
     std::vector<glm::mat4> gemWorlds; // world transforms for each spawned gem
+    std::vector<bool> gemsCatched = {false, false, false, false, false, false, false, false, false, false};
+    float catchRadius = 2.f;
+    float timer = 0.f;
+    bool timerDone = false;
     float gemAngle = 0.0f;
 
     float baseFov = glm::radians(45.0f);
@@ -147,6 +151,7 @@ protected:
 
     // Variabili per il controllo dell'aereo
     glm::vec3 airplanePosition;
+    glm::vec3 airplaneVelocity;
     glm::quat airplaneOrientation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
     glm::vec3 airplaneScale = glm::vec3(1.0f);
     bool airplaneInitialized = false;
@@ -775,20 +780,10 @@ protected:
         // Aggiornamento HUD (precedentemente in una funzione separata)
         static float elapsedT = 0.0f;
         static int countedFrames = 0;
-        //static float deltaT_copy = 0.0f; // Necessaria una copia locale
-        // Questa parte è un po' un trucco, idealmente deltaT andrebbe passato
-        /*if (elapsedT == 0.0f)
-        {
-            // Estrai deltaT solo una volta per evitare problemi
-            float temp_deltaT;
-            glm::vec3 m, r;
-            bool fire;
-            getSixAxis(temp_deltaT, m, r, fire);
-            deltaT_copy = temp_deltaT;
-        }*/
 
         countedFrames++;
         elapsedT += deltaT;
+        timer += deltaT;
         if (elapsedT > 1.0f)
         {
             float fps = (float)countedFrames / elapsedT;
@@ -861,17 +856,17 @@ protected:
             float yawInput = 0.0f;
             float rollDirection = 0.0f; // Direzione del rollio: -1 (sinistra), 0 (neutro), 1 (destra)
 
-            if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) pitchInput += PITCH_RATE;
-            if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) pitchInput -= PITCH_RATE;
+            if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) pitchInput -= PITCH_RATE;
+            if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) pitchInput += PITCH_RATE;
             if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS)
             {
                 yawInput += YAW_RATE;
-                rollDirection -= 1.0f;
+                rollDirection -= 1.f;
             }
             if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
             {
                 yawInput -= YAW_RATE;
-                rollDirection += 1.0f;
+                rollDirection += 1.f;
             }
 
             glm::vec3 localForward = airplaneOrientation * glm::vec3(-1.0f, 0.0f, 0.0f);
@@ -885,8 +880,10 @@ protected:
 
             airplaneOrientation = glm::normalize(yawRotation * pitchRotation * airplaneOrientation);
             //airplanePosition += localForward * (AIRPLANE_FORWARD_SPEED * deltaT);
+            //airplanePosition += localForward * (AIRPLANE_FORWARD_SPEED * deltaT);
             handleAirplaneBoost(window, deltaT, currentSpeedMultiplier, AIRPLANE_FORWARD_SPEED, localForward, airplanePosition);
 
+            airplaneVelocity = localForward * AIRPLANE_FORWARD_SPEED * currentSpeedMultiplier;
             // --- Logica del Rollio VISIVO (Nuova versione) ---
             // 1. Determina l'angolo di inclinazione target in base all'input
             float targetRollAngle = MAX_VISUAL_ROLL_ANGLE * rollDirection;
@@ -955,7 +952,7 @@ protected:
         updateUniforms(currentImage, deltaT);
 
         alListener3f(AL_POSITION, cameraPos.x, cameraPos.y, cameraPos.z);
-        alListener3f(AL_VELOCITY, 0, 0, 0);
+        alListener3f(AL_VELOCITY, airplaneVelocity.x, airplaneVelocity.y, airplaneVelocity.z);
 
         // 1) Compute your “forward” (aka “at”) vector:
         glm::vec3 forward = glm::normalize(cameraLookAt - cameraPos);
@@ -973,12 +970,28 @@ protected:
             up.x,      up.y,      up.z
         };
         alListenerfv(AL_ORIENTATION, ori);
+        GameLogic();
     }
 
 
-    float GameLogic()
-    {
-        return 0.0f;
+    void GameLogic(){
+        for (int i = 0; i < gemWorlds.size(); i++)
+        {
+            // 1) Get gem position (translation column of the mat4)
+            auto gemPos = glm::vec3(gemWorlds[i][3]);
+
+            // 2) If within radius and not yet caught...
+            if (const float dist = glm::distance(gemPos, airplanePosition); dist < catchRadius && !gemsCatched[i])
+            {
+                gemsCatched[i] = true;
+                gemWorlds[i] = glm::translate(glm::mat4(1.0f), gemPos)
+                             * glm::scale    (glm::mat4(1.0f), glm::vec3(0.0f));
+            }
+        }
+        if (timer > 10.f && !timerDone) {
+            std::cout << "Time's up!" << std::endl;
+            timerDone = true;
+        }
     }
 
     void audioInit() {
