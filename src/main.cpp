@@ -498,16 +498,16 @@ protected:
         // Adding randomisation of gems
         std::random_device rd;
         rng = std::mt19937(rd());
-        distX = std::uniform_real_distribution<float>(-10.0f, 10.0f);
-        distY = std::uniform_real_distribution<float>(0.0f, 10.0f);
-        distZ = std::uniform_real_distribution<float>(-10.0f, 10.0f);
+        distX = std::uniform_real_distribution<float>(-40.0f, 40.0f);
+        distY = std::uniform_real_distribution<float>(0.0f, 40.0f);
+        distZ = std::uniform_real_distribution<float>(-40.0f, 40.0f);
 
 		gemWorlds.resize(10);
 		for (auto& M : gemWorlds) {
 			M =
 				glm::translate(glm::mat4(1.0f),
 							 glm::vec3(distX(rng), distY(rng), distZ(rng)))
-				* glm::scale(glm::mat4(1.0f), glm::vec3(0.025f));
+				* glm::scale(glm::mat4(1.0f), glm::vec3(0.05f));
 		}
 
 		audioInit();
@@ -836,13 +836,14 @@ protected:
                 rollDirection += 1.0f;
             }
 
-            // --- Logica di Volo (Direzione) ---
             glm::vec3 localForward = airplaneOrientation * glm::vec3(-1.0f, 0.0f, 0.0f);
-            glm::vec3 localRight = airplaneOrientation * glm::vec3(0.0f, 1.0f, 0.0f);
-            glm::vec3 localUp = airplaneOrientation * glm::vec3(0.0f, 0.0f, 1.0f);
+            glm::vec3 globalUp = glm::vec3(0.0f, 1.0f, 0.0f);
+            // Equivalent to cross product of the previous two vectors, without the risk of null vector, because
+            // we are using quaternions (as a pro)! :)
+            glm::vec3 localRight = airplaneOrientation * globalUp;
 
             glm::quat pitchRotation = glm::angleAxis(pitchInput * deltaT, localRight);
-            glm::quat yawRotation = glm::angleAxis(yawInput * deltaT, localUp);
+            glm::quat yawRotation = glm::angleAxis(yawInput * deltaT, globalUp);
 
             airplaneOrientation = glm::normalize(yawRotation * pitchRotation * airplaneOrientation);
             airplanePosition += localForward * (AIRPLANE_FORWARD_SPEED * deltaT);
