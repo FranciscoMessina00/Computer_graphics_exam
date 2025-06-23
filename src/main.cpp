@@ -9,6 +9,13 @@
 #include "modules/Animations.hpp"
 #include <random>
 
+#include <AL/al.h>
+#include <AL/alc.h>
+#define DR_WAV_IMPLEMENTATION
+#include <dr_wav.h>
+#include <thread>
+#include <chrono>
+
 // The uniform buffer object used in this example
 struct VertexChar
 {
@@ -135,6 +142,11 @@ protected:
     glm::vec3 airplaneScale = glm::vec3(1.0f);
     bool airplaneInitialized = false;
     float visualRollAngle = 0.0f;
+
+	ALCdevice*  device;
+	ALCcontext* context;
+	ALuint audio_source;
+	ALuint audio_buffer;
 
 
     // Here you set the main application parameters
@@ -490,32 +502,34 @@ protected:
         distY = std::uniform_real_distribution<float>(0.0f, 10.0f);
         distZ = std::uniform_real_distribution<float>(-10.0f, 10.0f);
 
-        gemWorlds.resize(10);
-        for (auto& M : gemWorlds)
-        {
-            M =
-                glm::translate(glm::mat4(1.0f),
-                               glm::vec3(distX(rng), distY(rng), distZ(rng)))
-                * glm::scale(glm::mat4(1.0f), glm::vec3(0.025f));
-        }
-        std::cout << "Init done!\n";
-    }
+		gemWorlds.resize(10);
+		for (auto& M : gemWorlds) {
+			M =
+				glm::translate(glm::mat4(1.0f),
+							 glm::vec3(distX(rng), distY(rng), distZ(rng)))
+				* glm::scale(glm::mat4(1.0f), glm::vec3(0.025f));
+		}
 
-    // Here you create your pipelines and Descriptor Sets!
-    void pipelinesAndDescriptorSetsInit()
-    {
-        // creates the render pass
-        RP.create();
+		audioInit();
 
-        // This creates a new pipeline (with the current surface), using its shaders for the provided render pass
-        Pchar.create(&RP);
-        PsimpObj.create(&RP);
-        PskyBox.create(&RP);
-        P_PBR.create(&RP);
 
-        SC.pipelinesAndDescriptorSetsInit();
-        txt.pipelinesAndDescriptorSetsInit();
-    }
+		std::cout << "Init done!\n";
+	}
+	
+	// Here you create your pipelines and Descriptor Sets!
+	void pipelinesAndDescriptorSetsInit() {
+		// creates the render pass
+		RP.create();
+		
+		// This creates a new pipeline (with the current surface), using its shaders for the provided render pass
+		Pchar.create(&RP);
+		PsimpObj.create(&RP);
+		PskyBox.create(&RP);
+		P_PBR.create(&RP);
+		
+		SC.pipelinesAndDescriptorSetsInit();
+		txt.pipelinesAndDescriptorSetsInit();
+	}
 
     // Here you destroy your pipelines and Descriptor Sets!
     void pipelinesAndDescriptorSetsCleanup()
@@ -547,33 +561,31 @@ protected:
 
         RP.destroy();
 
-        SC.localCleanup();
-        txt.localCleanup();
+		SC.localCleanup();	
+		txt.localCleanup();
+		
+		for(int ian = 0; ian < N_ANIMATIONS; ian++) {
+			Anim[ian].cleanup();
+		}
 
-        for (int ian = 0; ian < N_ANIMATIONS; ian++)
-        {
-            Anim[ian].cleanup();
-        }
-    }
-
-    // Here it is the creation of the command buffer:
-    // You send to the GPU all the objects you want to draw,
-    // with their buffers and textures
-    static void populateCommandBufferAccess(VkCommandBuffer commandBuffer, int currentImage, void* Params)
-    {
-        // Simple trick to avoid having always 'T->'
-        // in che code that populates the command buffer!
-        std::cout << "Populating command buffer for " << currentImage << "\n";
-        E09* T = (E09*)Params;
-        T->populateCommandBuffer(commandBuffer, currentImage);
-    }
-
-    // This is the real place where the Command Buffer is written
-    void populateCommandBuffer(VkCommandBuffer commandBuffer, int currentImage)
-    {
-        std::cout << "Let's command buffer!";
-        // begin standard pass
-        RP.begin(commandBuffer, currentImage);
+		audioCleanUp();
+	}
+	
+	// Here it is the creation of the command buffer:
+	// You send to the GPU all the objects you want to draw,
+	// with their buffers and textures
+	static void populateCommandBufferAccess(VkCommandBuffer commandBuffer, int currentImage, void *Params) {
+		// Simple trick to avoid having always 'T->'
+		// in che code that populates the command buffer!
+		std::cout << "Populating command buffer for " << currentImage << "\n";
+		E09 *T = (E09 *)Params;
+		T->populateCommandBuffer(commandBuffer, currentImage);
+	}
+	// This is the real place where the Command Buffer is written
+	void populateCommandBuffer(VkCommandBuffer commandBuffer, int currentImage) {
+		std::cout << "Let's command buffer!";
+		// begin standard pass
+		RP.begin(commandBuffer, currentImage);
 
         SC.populateCommandBuffer(commandBuffer, 0, currentImage);
 
@@ -891,6 +903,26 @@ protected:
 
         // 6. Aggiorna tutti gli uniform buffer con le matrici finali
         updateUniforms(currentImage, deltaT);
+
+        alListener3f(AL_POSITION, cameraPos.x, cameraPos.y, cameraPos.z);
+        alListener3f(AL_VELOCITY, 0, 0, 0);
+
+        // 1) Compute your “forward” (aka “at”) vector:
+        glm::vec3 forward = glm::normalize(cameraLookAt - cameraPos);
+
+        // 2) Choose a “world up” (usually +Y):
+        glm::vec3 worldUp(0.0f, 1.0f, 0.0f);
+
+        // 3) Build a true camera “up” vector that’s perpendicular to forward:
+        //    this handles roll if you ever introduce it.
+        //    (right × forward gives an up that’s perpendicular to both)
+        glm::vec3 right   = glm::normalize(glm::cross(forward, worldUp));
+        glm::vec3 up      = glm::cross(right, forward);
+        float ori[6] = {
+            forward.x, forward.y, forward.z,
+            up.x,      up.y,      up.z
+        };
+        alListenerfv(AL_ORIENTATION, ori);
     }
 
 
@@ -898,6 +930,75 @@ protected:
     {
         return 0.0f;
     }
+
+    void audioInit() {
+		// 1) Open default device & create context
+		device  = alcOpenDevice(nullptr);
+		if (!device) { std::cerr<<"Failed to open audio device\n"; return ; }
+		context = alcCreateContext(device, nullptr);
+		if (!context || !alcMakeContextCurrent(context)) {
+			std::cerr<<"Failed to create/make context\n";
+			if (context) alcDestroyContext(context);
+			alcCloseDevice(device);
+			return ;
+		}
+
+		// 3) Set up the listener (camera) defaults
+		//    Position at origin, no velocity
+		alListener3f(AL_POSITION, 0.0f, 0.0f, 0.0f);
+		alListener3f(AL_VELOCITY, 0.0f, 0.0f, 0.0f);
+
+		//    Orientation: facing down −Z, with +Y as up
+		float listenerOri[] = {
+			0.0f, 0.0f, -1.0f,   // “forward” vector
+			0.0f, 1.0f,  0.0f    // “up” vector
+		};
+		alListenerfv(AL_ORIENTATION, listenerOri);
+
+		alGenSources(1, &audio_source);
+		alSource3f(audio_source, AL_POSITION, 0, 0, 0);
+		alSource3f(audio_source, AL_VELOCITY, 0, 0, 0);
+		alDistanceModel(AL_INVERSE_DISTANCE_CLAMPED);
+
+		loadWavToBuffer("assets/audios/audio_mono.wav");
+
+		alSourcei(audio_source, AL_BUFFER,  audio_buffer);
+		alSourcei(audio_source, AL_LOOPING, AL_TRUE);
+		alSourcef(audio_source, AL_REFERENCE_DISTANCE, 1.0f);
+		alSourcef(audio_source, AL_ROLLOFF_FACTOR, 1.0f);
+		alSourcef(audio_source, AL_MAX_DISTANCE, 500.0f);
+		alSourcei(audio_source, AL_SOURCE_RELATIVE, AL_FALSE);
+		alSourcePlay(audio_source);
+	}
+	void audioCleanUp() {
+
+		alDeleteSources(1, &audio_source);
+		alDeleteBuffers(1, &audio_buffer);
+		alcMakeContextCurrent(nullptr);
+		alcDestroyContext(context);
+		alcCloseDevice(device);
+	}
+	void loadWavToBuffer(const char* fileName) {
+		// 2) Load WAV into an OpenAL buffer
+		drwav wav;
+		if (!drwav_init_file(&wav, fileName, nullptr)) {
+			std::cerr<<"Could not open audio.wav\n";
+			return ;
+		}
+		size_t totalSamples = wav.totalPCMFrameCount * wav.channels;
+		int16_t* pcmData = (int16_t*)malloc(totalSamples * sizeof(int16_t));
+		drwav_read_pcm_frames_s16(&wav, wav.totalPCMFrameCount, pcmData);
+		drwav_uninit(&wav);
+
+		ALenum format = (wav.channels == 1 ? AL_FORMAT_MONO16 : AL_FORMAT_STEREO16);
+		std::cerr << "Format: " << format << std::endl;
+
+		alGenBuffers(1, &audio_buffer);
+		alBufferData(audio_buffer, format, pcmData,
+					 (ALsizei)(totalSamples * sizeof(int16_t)),
+					 wav.sampleRate);
+		free(pcmData);
+	}
 };
 
 

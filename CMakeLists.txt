@@ -88,6 +88,7 @@ if(APPLE)
     # Copy resources (textures, models, etc.) to the build directory
     file(COPY ${CMAKE_SOURCE_DIR}/assets/textures DESTINATION ${CMAKE_BINARY_DIR}/assets)
     file(COPY ${CMAKE_SOURCE_DIR}/assets/models DESTINATION ${CMAKE_BINARY_DIR}/assets)
+    file(COPY ${CMAKE_SOURCE_DIR}/assets/audios DESTINATION ${CMAKE_BINARY_DIR}/assets)
 
 elseif(WIN32)
     # Windows specific configurations
@@ -115,10 +116,18 @@ elseif(WIN32)
     endforeach()
 
     foreach(lib IN LISTS Vulkan_LIBRARIES LINK_LIBS)
-        target_link_libraries(${PROJECT_NAME} ${lib})
+        target_link_libraries(${PROJECT_NAME} PRIVATE ${lib})
     endforeach()
 
+    # Add the OpenAL include path
     target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_SOURCE_DIR}/include)
+
+    # Add the OpenAL .lib path
+    target_link_directories(${PROJECT_NAME} PRIVATE ${CMAKE_SOURCE_DIR}/audioLibrary)
+
+    # Link to the library
+    target_link_libraries(${PROJECT_NAME} PRIVATE OpenAL32)
+
 
     # === Shader Compilation ===
     file(MAKE_DIRECTORY ${CMAKE_BINARY_DIR}/shaders)
@@ -147,6 +156,7 @@ elseif(WIN32)
     file(COPY ${SHADER_SPV_FILES} DESTINATION ${CMAKE_BINARY_DIR}/shaders)
     file(COPY ${CMAKE_SOURCE_DIR}/assets/textures DESTINATION ${CMAKE_BINARY_DIR}/assets)
     file(COPY ${CMAKE_SOURCE_DIR}/assets/models DESTINATION ${CMAKE_BINARY_DIR}/assets)
+    file(COPY ${CMAKE_SOURCE_DIR}/assets/audios DESTINATION ${CMAKE_BINARY_DIR}/assets)
 elseif(UNIX AND NOT APPLE)
     file(GLOB_RECURSE SOURCES src/*.cpp)
     file(GLOB_RECURSE HEADERS include/*.h include/*.hpp)
@@ -201,6 +211,7 @@ elseif(UNIX AND NOT APPLE)
     file(COPY ${CMAKE_SOURCE_DIR}/assets/textures DESTINATION ${CMAKE_BINARY_DIR}/assets)
 
     file(COPY ${CMAKE_SOURCE_DIR}/assets/models DESTINATION ${CMAKE_BINARY_DIR}/assets)
+    file(COPY ${CMAKE_SOURCE_DIR}/assets/audios DESTINATION ${CMAKE_BINARY_DIR}/assets)
 else()
     message(FATAL_ERROR "Unsupported platform: ${CMAKE_SYSTEM_NAME}")
 endif()
