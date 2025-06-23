@@ -135,12 +135,12 @@ protected:
     float baseFov = glm::radians(45.0f);
     float boostedFov = glm::radians(60.0f);
     float currentFov;
-    //FastNoise noise;
-    //float noiseOffset = 0.0f;
-    //float shakeIntensity = 0.2f;
-    //float shakeSpeed = 2.0f;
+    FastNoise noise;
+    float noiseOffset = 0.0f;
+    float shakeIntensity = 2.f;
+    float shakeSpeed = 10.0f;
     std::mt19937 rng;
-    //std::uniform_real_distribution<float> shakeDist;
+    std::uniform_real_distribution<float> shakeDist;
     std::uniform_real_distribution<float> distX;
     std::uniform_real_distribution<float> distY;
     std::uniform_real_distribution<float> distZ;
@@ -513,13 +513,13 @@ protected:
         // Adding randomisation of gems
         std::random_device rd;
         rng = std::mt19937(rd());
-        //shakeDist = std::uniform_real_distribution<float>(-0.1f, 0.1f);
+        shakeDist = std::uniform_real_distribution<float>(-0.1f, 0.1f);
         distX = std::uniform_real_distribution<float>(-40.0f, 40.0f);
         distY = std::uniform_real_distribution<float>(0.0f, 40.0f);
         distZ = std::uniform_real_distribution<float>(-40.0f, 40.0f);
 
-        //noise.SetSeed(1337);
-        //noise.SetNoiseType(FastNoise::Perlin);
+        noise.SetSeed(1337);
+        noise.SetNoiseType(FastNoise::Perlin);
 
 		gemWorlds.resize(10);
 		for (auto& M : gemWorlds) {
@@ -902,14 +902,14 @@ protected:
 
             // Camera dell'aereo
             glm::vec3 shakeOffset = glm::vec3(0.0f);
-            /*if (isBoosting)
-            {
-                noiseOffset += deltaT * shakeSpeed;
-                shakeOffset = glm::vec3(noise.GetNoise(noiseOffset, 0.0f) * shakeIntensity,
-                                        noise.GetNoise(noiseOffset, 1.0f) * shakeIntensity,
-                                        noise.GetNoise(noiseOffset, 2.0f) * shakeIntensity);
+             if (isBoosting)
+             {
+                 noiseOffset += deltaT * shakeSpeed;
+                 shakeOffset = glm::vec3(noise.GetNoise(noiseOffset, 0.0f) * shakeIntensity,
+                                         0,
+                                         noise.GetNoise(noiseOffset, 2.0f) * shakeIntensity);
 
-            }*/
+             }
             const float CAMERA_SMOOTHING = 4.0f;
             glm::vec3 targetCameraPos = airplanePosition + (airplaneOrientation * glm::vec3(10.0f, 0.0f, 5.5f));
             float cameraInterpFactor = 1.0f - glm::exp(-CAMERA_SMOOTHING * deltaT);
