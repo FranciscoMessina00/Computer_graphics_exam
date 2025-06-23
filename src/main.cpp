@@ -15,6 +15,7 @@
 #include <dr_wav.h>
 #include <thread>
 #include <chrono>
+#include <FastNoise.h>
 
 // The uniform buffer object used in this example
 struct VertexChar
@@ -127,7 +128,15 @@ protected:
     std::vector<glm::mat4> gemWorlds; // world transforms for each spawned gem
     float gemAngle = 0.0f;
 
+    float baseFov = glm::radians(45.0f);
+    float boostedFov = glm::radians(60.0f);
+    float currentFov;
+    //FastNoise noise;
+    //float noiseOffset = 0.0f;
+    //float shakeIntensity = 0.2f;
+    //float shakeSpeed = 2.0f;
     std::mt19937 rng;
+    //std::uniform_real_distribution<float> shakeDist;
     std::uniform_real_distribution<float> distX;
     std::uniform_real_distribution<float> distY;
     std::uniform_real_distribution<float> distZ;
@@ -179,6 +188,7 @@ protected:
     // Here you also create your Descriptor set layouts and load the shaders for the pipelines
     void localInit()
     {
+        currentFov = baseFov;
         // Descriptor Layouts [what will be passed to the shaders]
         DSLglobal.init(this, {
                            // this array contains the binding:
@@ -498,9 +508,13 @@ protected:
         // Adding randomisation of gems
         std::random_device rd;
         rng = std::mt19937(rd());
+        //shakeDist = std::uniform_real_distribution<float>(-0.1f, 0.1f);
         distX = std::uniform_real_distribution<float>(-40.0f, 40.0f);
         distY = std::uniform_real_distribution<float>(0.0f, 40.0f);
         distZ = std::uniform_real_distribution<float>(-40.0f, 40.0f);
+
+        //noise.SetSeed(1337);
+        //noise.SetNoiseType(FastNoise::Perlin);
 
 		gemWorlds.resize(10);
 		for (auto& M : gemWorlds) {
@@ -652,6 +666,26 @@ protected:
         }
     }
 
+    // --- Prototipo della funzione per gestire l'accelerazione ---
+    void handleAirplaneBoost(GLFWwindow* window, float deltaT, float& currentSpeedMultiplier, float AIRPLANE_FORWARD_SPEED, glm::vec3& localForward, glm::vec3& airplanePosition) {
+        const float BOOST_MULTIPLIER = 2.0f; // Moltiplicatore di velocità quando si preme spazio
+        const float ACCELERATION_RATE = 2.0f; // Velocità di accelerazione/decelerazione
+
+        bool isBoosting = (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS);
+
+        // Calcola il moltiplicatore di velocità target
+        float targetSpeedMultiplier = isBoosting ? BOOST_MULTIPLIER : 1.0f;
+
+        // Interpola gradualmente il moltiplicatore di velocità corrente verso il target
+        float deltaSpeedMultiplier = targetSpeedMultiplier - currentSpeedMultiplier;
+        currentSpeedMultiplier += deltaSpeedMultiplier * ACCELERATION_RATE * deltaT;
+
+        // Applica il moltiplicatore alla velocità di movimento
+        float currentForwardSpeed = AIRPLANE_FORWARD_SPEED * currentSpeedMultiplier;
+
+        airplanePosition += localForward * (currentForwardSpeed * deltaT);
+    }
+
     // --- Aggiorna stato e animazioni ---
     void updateState(float deltaT)
     {
@@ -789,6 +823,10 @@ protected:
         // 4. Esegui la logica principale a doppia modalità (Aereo o Personaggio)
         glm::mat4 viewMatrix;
 
+        bool isBoosting = (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS);
+        float targetFov = isBoosting ? boostedFov : baseFov; // FOV dinamico per il boost
+        float fovInterpSpeed = 5.0f;
+        currentFov = glm::mix(currentFov, targetFov, fovInterpSpeed * deltaT);
         // Prova a inizializzare l'aereo. Se non è ancora stato fatto e viene trovato,
         // la variabile airplaneInitialized diventerà true.
         if (airplaneTechIdx != -1 && !airplaneInitialized)
@@ -817,7 +855,7 @@ protected:
             const float YAW_RATE = glm::radians(100.0f);
             const float MAX_VISUAL_ROLL_ANGLE = glm::radians(35.0f); // Inclinazione massima
             const float ROLL_INTERP_SPEED = 5.0f; // Velocità di inclinazione e auto-livellamento
-
+            static float currentSpeedMultiplier = 1.f; // Moltiplicatore di velocità per il boost
             // --- Lettura Input ---
             float pitchInput = 0.0f;
             float yawInput = 0.0f;
@@ -846,7 +884,8 @@ protected:
             glm::quat yawRotation = glm::angleAxis(yawInput * deltaT, globalUp);
 
             airplaneOrientation = glm::normalize(yawRotation * pitchRotation * airplaneOrientation);
-            airplanePosition += localForward * (AIRPLANE_FORWARD_SPEED * deltaT);
+            //airplanePosition += localForward * (AIRPLANE_FORWARD_SPEED * deltaT);
+            handleAirplaneBoost(window, deltaT, currentSpeedMultiplier, AIRPLANE_FORWARD_SPEED, localForward, airplanePosition);
 
             // --- Logica del Rollio VISIVO (Nuova versione) ---
             // 1. Determina l'angolo di inclinazione target in base all'input
@@ -865,10 +904,19 @@ protected:
                 glm::mat4_cast(finalOrientation) * glm::scale(glm::mat4(1.0f), airplaneScale);
 
             // Camera dell'aereo
+            glm::vec3 shakeOffset = glm::vec3(0.0f);
+            /*if (isBoosting)
+            {
+                noiseOffset += deltaT * shakeSpeed;
+                shakeOffset = glm::vec3(noise.GetNoise(noiseOffset, 0.0f) * shakeIntensity,
+                                        noise.GetNoise(noiseOffset, 1.0f) * shakeIntensity,
+                                        noise.GetNoise(noiseOffset, 2.0f) * shakeIntensity);
+
+            }*/
             const float CAMERA_SMOOTHING = 4.0f;
             glm::vec3 targetCameraPos = airplanePosition + (airplaneOrientation * glm::vec3(10.0f, 0.0f, 5.5f));
             float cameraInterpFactor = 1.0f - glm::exp(-CAMERA_SMOOTHING * deltaT);
-            cameraPos = glm::mix(cameraPos, targetCameraPos, cameraInterpFactor);
+            cameraPos = glm::mix(cameraPos + shakeOffset, targetCameraPos, cameraInterpFactor);
             cameraLookAt = glm::mix(cameraLookAt, airplanePosition, cameraInterpFactor);
             glm::vec3 cameraUp = glm::normalize(finalOrientation * glm::vec3(0.0f, 0.0f, 1.0f));
             viewMatrix = glm::lookAt(cameraPos, cameraLookAt, cameraUp);
@@ -898,8 +946,9 @@ protected:
         }
 
         // 5. Calcola la matrice di proiezione e la View-Projection finale
-        glm::mat4 projectionMatrix = glm::perspective(glm::radians(45.0f), Ar, 0.1f, 100.f);
+        glm::mat4 projectionMatrix = glm::perspective(currentFov, Ar, 0.1f, 100.f);
         projectionMatrix[1][1] *= -1; // Adatta a Vulkan
+
         ViewPrj = projectionMatrix * viewMatrix;
 
         // 6. Aggiorna tutti gli uniform buffer con le matrici finali
