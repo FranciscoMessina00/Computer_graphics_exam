@@ -80,18 +80,7 @@ class E09 : public BaseProject
 {
 protected:
     enum CameraMode {FIRST_PERSON, THIRD_PERSON};
-    enum AirplaneState {STATE_ON_GROUND, STATE_TAXIING, STATE_FLYING};
-    AirplaneState airplaneState = STATE_ON_GROUND;
-    bool engineOn = false;
-    float currentSpeed = 0.0f;
-
-    const float GROUND_LEVEL = 0.5f;       // Altezza del terreno
-    const float ACCELERATION = 4.0f;       // Tasso di accelerazione
-    const float DECELERATION = 2.0f;       // Tasso di decelerazione (resistenza)
-    const float MAX_GROUND_SPEED = 20.0f;  // Velocità massima a terra
-    const float MAX_AIR_SPEED = 30.0f;     // Velocità massima in aria
-    const float TAKEOFF_SPEED = 18.0f;     // Velocità minima per decollare
-    const float SINK_RATE = 3.0f;
+    
 
     CameraMode currentCameraMode = THIRD_PERSON;
     // Here you list all the Vulkan objects you need:
