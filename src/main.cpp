@@ -132,13 +132,15 @@ protected:
     bool timerDone = false;
     float gemAngle = 0.0f;
 
+    float minFov = glm::radians(30.0f);
+    float maxFov = glm::radians(80.0f);
     float baseFov = glm::radians(45.0f);
-    float boostedFov = glm::radians(60.0f);
+    float boostFovIncrease = glm::radians(15.0f);
     float currentFov;
     FastNoise noise;
     float noiseOffset = 0.0f;
-    float shakeIntensity = 2.f;
-    float shakeSpeed = 10.0f;
+    float shakeIntensity = 0.4f;
+    float shakeSpeed = 200.0f;
     std::mt19937 rng;
     std::uniform_real_distribution<float> shakeDist;
     std::uniform_real_distribution<float> distX;
@@ -194,6 +196,10 @@ protected:
     void localInit()
     {
         currentFov = baseFov;
+
+        glfwSetWindowUserPointer(window, this);
+        glfwSetScrollCallback(window, scroll_callback);
+
         // Descriptor Layouts [what will be passed to the shaders]
         DSLglobal.init(this, {
                            // this array contains the binding:
@@ -614,7 +620,12 @@ protected:
     // =================================================================================
     // Funzioni Helper Modulari
     // =================================================================================
-
+    void handleMouseScroll(double yoffset)
+    {
+        const float FOV_SENSITIVITY = glm::radians(2.5f);
+        baseFov -= yoffset * FOV_SENSITIVITY;
+        baseFov = glm::clamp(baseFov, minFov, maxFov);
+    }
     // --- Helper per la gestione dell'input con debouncing ---
     // Restituisce true solo sul primo frame in cui il tasto viene premuto.
     bool handleDebouncedKeyPress(int key)
@@ -819,7 +830,11 @@ protected:
         glm::mat4 viewMatrix;
 
         bool isBoosting = (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS);
-        float targetFov = isBoosting ? boostedFov : baseFov; // FOV dinamico per il boost
+        float targetFov = baseFov;
+        if (isBoosting)
+        {
+            targetFov += boostFovIncrease;
+        }
         float fovInterpSpeed = 5.0f;
         currentFov = glm::mix(currentFov, targetFov, fovInterpSpeed * deltaT);
         // Prova a inizializzare l'aereo. Se non è ancora stato fatto e viene trovato,
@@ -901,22 +916,24 @@ protected:
                 glm::mat4_cast(finalOrientation) * glm::scale(glm::mat4(1.0f), airplaneScale);
 
             // Camera dell'aereo
-            glm::vec3 shakeOffset = glm::vec3(0.0f);
-             if (isBoosting)
-             {
-                 noiseOffset += deltaT * shakeSpeed;
-                 shakeOffset = glm::vec3(noise.GetNoise(noiseOffset, 0.0f) * shakeIntensity,
-                                         0,
-                                         noise.GetNoise(noiseOffset, 2.0f) * shakeIntensity);
-
-             }
             const float CAMERA_SMOOTHING = 4.0f;
             glm::vec3 targetCameraPos = airplanePosition + (airplaneOrientation * glm::vec3(10.0f, 0.0f, 5.5f));
             float cameraInterpFactor = 1.0f - glm::exp(-CAMERA_SMOOTHING * deltaT);
-            cameraPos = glm::mix(cameraPos + shakeOffset, targetCameraPos, cameraInterpFactor);
+            cameraPos = glm::mix(cameraPos, targetCameraPos, cameraInterpFactor);
             cameraLookAt = glm::mix(cameraLookAt, airplanePosition, cameraInterpFactor);
-            glm::vec3 cameraUp = glm::normalize(finalOrientation * glm::vec3(0.0f, 0.0f, 1.0f));
-            viewMatrix = glm::lookAt(cameraPos, cameraLookAt, cameraUp);
+            glm::vec3 shakeOffset = glm::vec3(0.0f);
+            glm::vec3 finalCameraPos = cameraPos;
+             if (isBoosting)
+             {
+                 noiseOffset += deltaT * shakeSpeed;
+                 glm::vec3 localShake = glm::vec3(0.0f,
+                     noise.GetNoise(noiseOffset, 10.0f) * shakeIntensity,
+                     noise.GetNoise(noiseOffset, 20.0f) * shakeIntensity
+                     );
+                 finalCameraPos += finalOrientation * localShake;
+             }
+             glm::vec3 cameraUp = glm::normalize(finalOrientation * glm::vec3(0.0f, 0.0f, 1.0f));
+             viewMatrix = glm::lookAt(finalCameraPos, cameraLookAt, cameraUp);
         }
         else
         {
@@ -1062,6 +1079,16 @@ protected:
 					 wav.sampleRate);
 		free(pcmData);
 	}
+
+private:
+    static void scroll_callback(GLFWwindow* window, double xoffset, double yoffset)
+    {
+        E09* app = (E09*)glfwGetWindowUserPointer(window);
+        if (app)
+        {
+            app->handleMouseScroll(yoffset);
+        }
+    }
 };
 
 
