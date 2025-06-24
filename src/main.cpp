@@ -79,6 +79,21 @@ struct skyBoxUniformBufferObject
 class E09 : public BaseProject
 {
 protected:
+    enum CameraMode {FIRST_PERSON, THIRD_PERSON};
+    enum AirplaneState {STATE_ON_GROUND, STATE_TAXIING, STATE_FLYING};
+    AirplaneState airplaneState = STATE_ON_GROUND;
+    bool engineOn = false;
+    float currentSpeed = 0.0f;
+
+    const float GROUND_LEVEL = 0.5f;       // Altezza del terreno
+    const float ACCELERATION = 4.0f;       // Tasso di accelerazione
+    const float DECELERATION = 2.0f;       // Tasso di decelerazione (resistenza)
+    const float MAX_GROUND_SPEED = 20.0f;  // Velocità massima a terra
+    const float MAX_AIR_SPEED = 30.0f;     // Velocità massima in aria
+    const float TAKEOFF_SPEED = 18.0f;     // Velocità minima per decollare
+    const float SINK_RATE = 3.0f;
+
+    CameraMode currentCameraMode = THIRD_PERSON;
     // Here you list all the Vulkan objects you need:
 
     // Descriptor Layouts [what will be passed to the shaders]
@@ -139,8 +154,8 @@ protected:
     float currentFov;
     FastNoise noise;
     float noiseOffset = 0.0f;
-    float shakeIntensity = 0.4f;
-    float shakeSpeed = 200.0f;
+    float shakeIntensity = 0.2f;
+    float shakeSpeed = 100.0f;
     std::mt19937 rng;
     std::uniform_real_distribution<float> shakeDist;
     std::uniform_real_distribution<float> distX;
@@ -158,6 +173,7 @@ protected:
     glm::vec3 airplaneScale = glm::vec3(1.0f);
     bool airplaneInitialized = false;
     float visualRollAngle = 0.0f;
+    glm::vec3 currentShakeOffset = glm::vec3(0.0f);
 
 	ALCdevice*  device;
 	ALCcontext* context;
@@ -653,8 +669,10 @@ protected:
         {
             glfwSetWindowShouldClose(window, GL_TRUE);
         }
-        if (handleDebouncedKeyPress(GLFW_KEY_1)) debug1.x = 1.0f - debug1.x;
-        if (handleDebouncedKeyPress(GLFW_KEY_2)) debug1.y = 1.0f - debug1.y;
+        //if (handleDebouncedKeyPress(GLFW_KEY_1)) debug1.x = 1.0f - debug1.x;
+        if (handleDebouncedKeyPress(GLFW_KEY_1)) currentCameraMode = FIRST_PERSON;
+        //if (handleDebouncedKeyPress(GLFW_KEY_2)) debug1.y = 1.0f - debug1.y;
+        if (handleDebouncedKeyPress(GLFW_KEY_2)) currentCameraMode = THIRD_PERSON;
         if (handleDebouncedKeyPress(GLFW_KEY_P))
         {
             debug1.z = (float)(((int)debug1.z + 1) % 65);
@@ -831,14 +849,13 @@ protected:
 
         bool isBoosting = (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS);
         float targetFov = baseFov;
-        if (isBoosting)
+        if (isBoosting && currentCameraMode == THIRD_PERSON)
         {
             targetFov += boostFovIncrease;
         }
         float fovInterpSpeed = 5.0f;
         currentFov = glm::mix(currentFov, targetFov, fovInterpSpeed * deltaT);
-        // Prova a inizializzare l'aereo. Se non è ancora stato fatto e viene trovato,
-        // la variabile airplaneInitialized diventerà true.
+
         if (airplaneTechIdx != -1 && !airplaneInitialized)
         {
             const glm::mat4& initialWm = SC.TI[airplaneTechIdx].I[airplaneInstIdx].Wm;
@@ -915,25 +932,66 @@ protected:
             SC.TI[airplaneTechIdx].I[airplaneInstIdx].Wm = glm::translate(glm::mat4(1.0f), airplanePosition) *
                 glm::mat4_cast(finalOrientation) * glm::scale(glm::mat4(1.0f), airplaneScale);
 
-            // Camera dell'aereo
-            const float CAMERA_SMOOTHING = 4.0f;
-            glm::vec3 targetCameraPos = airplanePosition + (airplaneOrientation * glm::vec3(10.0f, 0.0f, 5.5f));
+            glm::vec3 targetCameraPos;
+            glm::vec3 targetCameraLookAt;
+
+            if (glfwGetKey(window, GLFW_KEY_Q) == GLFW_PRESS)
+            {
+                glm::vec3 leftOffset = glm::vec3(2.0f, 8.0f, 2.0f);
+                targetCameraPos = airplanePosition + (airplaneOrientation * leftOffset);
+                targetCameraLookAt = airplanePosition;
+            }
+            else if (glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS)
+            {
+                glm::vec3 rightOffset = glm::vec3(2.0f, -8.0f, 2.0f);
+                targetCameraPos = airplanePosition + (airplaneOrientation * rightOffset);
+                targetCameraLookAt = airplanePosition;
+            }
+            else if (glfwGetKey(window, GLFW_KEY_X) == GLFW_PRESS)
+            {
+                glm::vec3 frontOffset = glm::vec3(-12.0f, 0.0f, 3.0f);
+                targetCameraPos = airplanePosition + (airplaneOrientation * frontOffset);
+                targetCameraLookAt = airplanePosition;
+            }
+            else
+            {
+                if (currentCameraMode == THIRD_PERSON)
+                {
+                    targetCameraPos = airplanePosition + (airplaneOrientation * glm::vec3(10.0f, 0.0f, 5.5f));
+                    targetCameraLookAt = airplanePosition;
+                }
+                else // FIRST_PERSON
+                {
+                    glm::vec3 noseOffset = glm::vec3(-2.15f, 0.0f, 1.2f);
+                    targetCameraPos = airplanePosition + (finalOrientation * noseOffset);
+                    targetCameraLookAt = targetCameraPos + (finalOrientation * glm::vec3(-1.0f, 0.0f, 0.0f));
+                }
+            }
+
+            const float CAMERA_SMOOTHING = 5.0f;
             float cameraInterpFactor = 1.0f - glm::exp(-CAMERA_SMOOTHING * deltaT);
             cameraPos = glm::mix(cameraPos, targetCameraPos, cameraInterpFactor);
-            cameraLookAt = glm::mix(cameraLookAt, airplanePosition, cameraInterpFactor);
-            glm::vec3 shakeOffset = glm::vec3(0.0f);
-            glm::vec3 finalCameraPos = cameraPos;
-             if (isBoosting)
-             {
-                 noiseOffset += deltaT * shakeSpeed;
-                 glm::vec3 localShake = glm::vec3(0.0f,
-                     noise.GetNoise(noiseOffset, 10.0f) * shakeIntensity,
-                     noise.GetNoise(noiseOffset, 20.0f) * shakeIntensity
-                     );
-                 finalCameraPos += finalOrientation * localShake;
-             }
-             glm::vec3 cameraUp = glm::normalize(finalOrientation * glm::vec3(0.0f, 0.0f, 1.0f));
-             viewMatrix = glm::lookAt(finalCameraPos, cameraLookAt, cameraUp);
+            cameraLookAt = glm::mix(cameraLookAt, targetCameraLookAt, cameraInterpFactor);
+
+            //glm::vec3 finalCameraPos = cameraPos;
+            glm::vec3 targetShakeOffset = glm::vec3(0.0f);
+            if (isBoosting)
+            {
+             noiseOffset += deltaT * shakeSpeed;
+             glm::vec3 localShake = glm::vec3(
+                 0.0f,
+                 noise.GetNoise(noiseOffset, 10.0f) * shakeIntensity,
+                 noise.GetNoise(noiseOffset, 20.0f) * shakeIntensity
+                 );
+             targetShakeOffset = finalOrientation * localShake;
+
+            }
+            const float SHAKE_INTERP_SPEED = 10.0f;
+            float shakeInterpFactor = 1.0f - glm::exp(-SHAKE_INTERP_SPEED * deltaT);
+            currentShakeOffset = glm::mix(currentShakeOffset, targetShakeOffset, shakeInterpFactor);
+            glm::vec3 finalCameraPos = cameraPos + currentShakeOffset;
+            glm::vec3 cameraUp = glm::normalize(finalOrientation * glm::vec3(0.0f, 0.0f, 1.f));
+            viewMatrix = glm::lookAt(finalCameraPos, cameraLookAt, cameraUp);
         }
         else
         {
@@ -1090,6 +1148,8 @@ private:
         }
     }
 };
+
+
 
 
 // This is the main: probably you do not need to touch this!
