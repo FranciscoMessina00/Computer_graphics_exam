@@ -194,6 +194,7 @@ int Scene::init(BaseProject *_BP,  int _Npasses, std::vector<VertexDescriptorRef
 			std::string VDN = ms[k]["VD"].template get<std::string>();
 
 			M[k] = new Model();
+//std::cout << "Model: " << ms[k]["id"] << ", format: " << MT << ", VD: " << VDN << "\n";
 			if(MT[0] == 'A') {
 				// init from asset file
 				std::string AN = ms[k]["asset"].template get<std::string>();
@@ -201,6 +202,7 @@ int Scene::init(BaseProject *_BP,  int _Npasses, std::vector<VertexDescriptorRef
 				int aId = AsIds[AN];
 //std::cout << "aId " << aId << "\n";
 				M[k]->initFromAsset(BP, VDIds[VDN], As[aId], ms[k]["model"], ms[k]["meshId"], ms[k]["node"]);
+//std::cout << "Model " << ms[k]["id"] << " has " << M[k]->vertices.size() << " vertices and " << M[k]->indices.size() << " indices\n";
 			} else {
 				M[k]->init(BP, VDIds[VDN], ms[k]["model"], (MT[0] == 'O') ? OBJ : ((MT[0] == 'G') ? GLTF : MGCG));
 			}

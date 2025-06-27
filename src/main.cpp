@@ -116,12 +116,12 @@ protected:
     TextMaker txt;
 
     // Other application parameters
-    float Ar; // Aspect ratio
+    float Ar = 0.f; // Aspect ratio
 
-    glm::mat4 ViewPrj;
-    glm::mat4 World;
+    glm::mat4 ViewPrj = {};
+    glm::mat4 World = {};
     glm::vec3 Pos = glm::vec3(0, 0, 5);
-    glm::vec3 cameraPos;
+    glm::vec3 cameraPos = {};
     glm::vec3 cameraLookAt = glm::vec3(0.0f);
     float Yaw = glm::radians(0.0f);
     float Pitch = glm::radians(0.0f);
@@ -140,7 +140,7 @@ protected:
     float maxFov = glm::radians(80.0f);
     float baseFov = glm::radians(45.0f);
     float boostFovIncrease = glm::radians(15.0f);
-    float currentFov;
+    float currentFov = 0.f;
     FastNoise noise;
     float noiseOffset = 0.0f;
     float shakeIntensity = 0.2f;
@@ -156,19 +156,26 @@ protected:
     int airplaneInstIdx = -1;
 
     // Variabili per il controllo dell'aereo
-    glm::vec3 airplanePosition;
-    glm::vec3 airplaneVelocity;
+    glm::vec3 airplanePosition = {};
+    glm::vec3 airplaneVelocity = {};
     glm::quat airplaneOrientation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
     glm::vec3 airplaneScale = glm::vec3(1.0f);
     bool airplaneInitialized = false;
     float visualRollAngle = 0.0f;
     glm::vec3 currentShakeOffset = glm::vec3(0.0f);
 
-	ALCdevice*  device;
-	ALCcontext* context;
-	ALuint audio_source;
-	ALuint audio_buffer;
+	ALCdevice* device = nullptr;
+	ALCcontext* context = nullptr;
+	ALuint audio_source = -1;
+	ALuint audio_buffer = -1;
 
+
+    // Indici per il pavimento
+    int groundTechIdx = -1;
+    int groundInstIdx = -1;
+    // fix the ground’s Y (height) to whatever you want—say groundY = 0.0f:
+    const float groundY = 0.1f;
+    glm::mat4 groundBaseWm = glm::mat4(1.f);
 
     // Here you set the main application parameters
     void setWindowParameters()
@@ -463,9 +470,9 @@ protected:
         // Models, textures and Descriptors (values assigned to the uniforms)
 
         // sets the size of the Descriptor Set Pool
-        DPSZs.uniformBlocksInPool = 10;
-        DPSZs.texturesInPool = 10;
-        DPSZs.setsInPool = 10;
+        DPSZs.uniformBlocksInPool = 20;
+        DPSZs.texturesInPool = 20;
+        DPSZs.setsInPool = 20;
 
         std::cout << "\nLoading the scene\n\n";
         if (SC.init(this, /*Npasses*/1, VDRs, PRs, "assets/models/scene.json") != 0)
@@ -474,7 +481,7 @@ protected:
             exit(0);
         }
 
-        // Cerca l'indice della tecnica e dell'istanza dell'aereo
+        // Cerca l'indice della tecnica e dell'istanza dell'aereo e del pavimento
         for (int i = 0; i < PRs.size(); i++)
         {
             for (int j = 0; j < SC.TI[i].InstanceCount; j++)
@@ -501,6 +508,7 @@ protected:
         {
             std::cout << "WARNING: Airplane 'ap' not found in scene.\n";
         }
+
 
         // initializes animations
         for (int ian = 0; ian < N_ANIMATIONS; ian++)
@@ -542,6 +550,34 @@ protected:
 
 		audioInit();
 
+        for (int i = 0; i < PRs.size(); i++)
+        {
+            for (int j = 0; j < SC.TI[i].InstanceCount; j++)
+            {
+                if (SC.TI[i].I[j].id != nullptr && *(SC.TI[i].I[j].id) == "2Dplane")
+                {
+                    groundTechIdx = i;
+                    groundInstIdx = j;
+                    break;
+                }
+            }
+            if (groundTechIdx != -1)
+            {
+                break;
+            }
+        }
+        if (groundTechIdx != -1)
+        {
+            std::cout << "Ground '2Dplane' found at Technique " << groundTechIdx << ", Instance " << groundInstIdx <<
+                "\n";
+            groundBaseWm = SC.TI[groundTechIdx].I[groundInstIdx].Wm;
+        }
+        else
+        {
+            std::cout << "WARNING: Ground '2Dplane' not found in scene.\n";
+        }
+
+        assert(groundTechIdx >= 0 && groundInstIdx >= 0);
 
 		std::cout << "Init done!\n";
 	}
@@ -1017,6 +1053,7 @@ protected:
 
         alListener3f(AL_POSITION, cameraPos.x, cameraPos.y, cameraPos.z);
         alListener3f(AL_VELOCITY, airplaneVelocity.x, airplaneVelocity.y, airplaneVelocity.z);
+        std::cout << "Camera Position: " << cameraPos.x << ", " << cameraPos.y << ", " << cameraPos.z << "\n";
 
         // 1) Compute your “forward” (aka “at”) vector:
         glm::vec3 forward = glm::normalize(cameraLookAt - cameraPos);
@@ -1034,6 +1071,19 @@ protected:
             up.x,      up.y,      up.z
         };
         alListenerfv(AL_ORIENTATION, ori);
+
+        // build a translation matrix that follows the airplane in X and Z only:
+        glm::mat4 groundXzFollow = glm::translate(
+          glm::mat4(1.0f),
+          glm::vec3(airplanePosition.x, groundY, airplanePosition.z)
+        );
+
+        // if you originally had a scale on the ground, you can re-apply it:
+        // glm::mat4 groundScale = glm::scale(glm::mat4(1.0f), yourGroundScale);
+        if (groundTechIdx >= 0 && groundInstIdx >= 0) {
+            SC.TI[groundTechIdx].I[groundInstIdx].Wm = groundXzFollow * groundBaseWm;
+        }
+
         GameLogic();
     }
 
