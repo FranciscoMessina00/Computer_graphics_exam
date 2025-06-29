@@ -54,6 +54,13 @@ struct GlobalUniformBufferObject
     alignas(16) glm::vec3 eyePos;
 };
 
+struct GlobalUniformBufferGround {
+    alignas(16) glm::vec3 lightDir;
+    alignas(16) glm::vec4 lightColor;
+    alignas(16) glm::vec3 eyePos;
+    alignas(16) glm::vec3 eyePosNoSmooth;
+};
+
 struct UniformBufferObjectChar
 {
     alignas(16) glm::vec4 debug1;
@@ -67,6 +74,14 @@ struct UniformBufferObjectSimp
     alignas(16) glm::mat4 mvpMat;
     alignas(16) glm::mat4 mMat;
     alignas(16) glm::mat4 nMat;
+};
+
+struct UniformBufferObjectGround
+{
+    alignas(16) glm::mat4 mvpMat;
+    alignas(16) glm::mat4 mMat;
+    alignas(16) glm::mat4 nMat;
+    alignas(16) glm::mat4 worldMat;
 };
 
 struct skyBoxUniformBufferObject
@@ -86,7 +101,7 @@ protected:
     // Here you list all the Vulkan objects you need:
 
     // Descriptor Layouts [what will be passed to the shaders]
-    DescriptorSetLayout DSLlocalChar, DSLlocalSimp, DSLlocalGem, DSLlocalPBR, DSLglobal, DSLskyBox;
+    DescriptorSetLayout DSLlocalChar, DSLlocalSimp, DSLlocalGem, DSLlocalPBR, DSLglobal, DSLglobalGround, DSLskyBox, DSLground;
 
     // Vertex formants, Pipelines [Shader couples] and Render passes
     VertexDescriptor VDchar;
@@ -94,8 +109,9 @@ protected:
     VertexDescriptor VDgem;
     VertexDescriptor VDskyBox;
     VertexDescriptor VDtan;
+    VertexDescriptor VDground;
     RenderPass RP;
-    Pipeline Pchar, PsimpObj, PskyBox, P_PBR, Pgem;
+    Pipeline Pchar, PsimpObj, PskyBox, P_PBR, Pgem, Pground;
     //*DBG*/Pipeline PDebug;
 
     // Models, textures and Descriptors (values assigned to the uniforms)
@@ -123,6 +139,7 @@ protected:
     glm::vec3 Pos = glm::vec3(0, 0, 5);
     glm::vec3 cameraPos = {};
     glm::vec3 cameraLookAt = glm::vec3(0.0f);
+    glm::vec3 targetCameraPos = {};
     float Yaw = glm::radians(0.0f);
     float Pitch = glm::radians(0.0f);
     float Roll = glm::radians(0.0f);
@@ -224,6 +241,17 @@ protected:
                            }
                        });
 
+        DSLglobalGround.init(this, {
+                           // this array contains the binding:
+                           // first  element : the binding number
+                           // second element : the type of element (buffer or texture)
+                           // third  element : the pipeline stage where it will be used
+                           {
+                               0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_ALL_GRAPHICS,
+                               sizeof(GlobalUniformBufferGround), 1
+                           }
+                       });
+
         DSLlocalChar.init(this, {
                               // this array contains the binding:
                               // first  element : the binding number
@@ -257,6 +285,19 @@ protected:
                              {
                                  0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_VERTEX_BIT,
                                  sizeof(UniformBufferObjectSimp), 1
+                             },
+                             {1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 0, 1},
+                             {2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 1, 1}
+                         });
+
+        DSLground.init(this, {
+                             // this array contains the binding:
+                             // first  element : the binding number
+                             // second element : the type of element (buffer or texture)
+                             // third  element : the pipeline stage where it will be used
+                             {
+                                 0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_VERTEX_BIT,
+                                 sizeof(UniformBufferObjectGround), 1
                              },
                              {1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 0, 1},
                              {2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 1, 1}
@@ -344,6 +385,23 @@ protected:
                        }
                    });
 
+        VDground.init(this, {
+                       {0, sizeof(VertexSimp), VK_VERTEX_INPUT_RATE_VERTEX}
+                   }, {
+                       {
+                           0, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(VertexSimp, pos),
+                           sizeof(glm::vec3), POSITION
+                       },
+                       {
+                           0, 1, VK_FORMAT_R32G32B32_SFLOAT, offsetof(VertexSimp, norm),
+                           sizeof(glm::vec3), NORMAL
+                       },
+                       {
+                           0, 2, VK_FORMAT_R32G32_SFLOAT, offsetof(VertexSimp, UV),
+                           sizeof(glm::vec2), UV
+                       }
+                   });
+
         VDskyBox.init(this, {
                           {0, sizeof(skyBoxVertex), VK_VERTEX_INPUT_RATE_VERTEX}
                       }, {
@@ -374,12 +432,13 @@ protected:
                        }
                    });
 
-        VDRs.resize(5);
+        VDRs.resize(6);
         VDRs[0].init("VDchar", &VDchar);
         VDRs[1].init("VDsimp", &VDsimp);
         VDRs[2].init("VDskybox", &VDskyBox);
         VDRs[3].init("VDtan", &VDtan);
         VDRs[4].init("VDgem", &VDgem);
+        VDRs[5].init("VDground", &VDground);
 
         // initializes the render passes
         RP.init(this);
@@ -397,6 +456,8 @@ protected:
                       {&DSLglobal, &DSLlocalSimp});
         Pgem.init(this, &VDgem, "shaders/SimplePosNormUV.vert.spv", "shaders/CookTorrance.frag.spv",
                   {&DSLglobal, &DSLlocalGem});
+        Pground.init(this, &VDground, "shaders/GroundVertex.vert.spv", "shaders/CookTorranceGround.frag.spv",
+                  {&DSLglobalGround, &DSLground});
 
         PskyBox.init(this, &VDskyBox, "shaders/SkyBoxShader.vert.spv", "shaders/SkyBoxShader.frag.spv", {&DSLskyBox});
         PskyBox.setCompareOp(VK_COMPARE_OP_LESS_OR_EQUAL);
@@ -406,7 +467,7 @@ protected:
         P_PBR.init(this, &VDtan, "shaders/SimplePosNormUvTan.vert.spv", "shaders/PBR.frag.spv",
                    {&DSLglobal, &DSLlocalPBR});
 
-        PRs.resize(5);
+        PRs.resize(6);
         PRs[0].init("CookTorranceChar", {
                         {
                             &Pchar, {
@@ -452,7 +513,19 @@ protected:
                             }
                         }
                     }, /*TotalNtextures*/1, &VDskyBox);
-        PRs[4].init("PBR", {
+        PRs[4].init("GroundShader", {
+                        {
+                            &Pground, {
+                                //Pipeline and DSL for the first pass
+                                /*DSLglobal*/{},
+                                /*DSLlocalSimp*/{
+                                    /*t0*/{true, 0, {}}, // index 0 of the "texture" field in the json file
+                                    /*t1*/{true, 1, {}} // index 1 of the "texture" field in the json file
+                                }
+                            }
+                        }
+                    }, /*TotalNtextures*/2, &VDground);
+        PRs[5].init("PBR", {
                         {
                             &P_PBR, {
                                 //Pipeline and DSL for the first pass
@@ -467,12 +540,13 @@ protected:
                         }
                     }, /*TotalNtextures*/4, &VDtan);
 
+
         // Models, textures and Descriptors (values assigned to the uniforms)
 
         // sets the size of the Descriptor Set Pool
-        DPSZs.uniformBlocksInPool = 20;
-        DPSZs.texturesInPool = 20;
-        DPSZs.setsInPool = 20;
+        DPSZs.uniformBlocksInPool = 30;
+        DPSZs.texturesInPool = 30;
+        DPSZs.setsInPool = 30;
 
         std::cout << "\nLoading the scene\n\n";
         if (SC.init(this, /*Npasses*/1, VDRs, PRs, "assets/models/scene.json") != 0)
@@ -592,6 +666,8 @@ protected:
 		PsimpObj.create(&RP);
 		PskyBox.create(&RP);
 		P_PBR.create(&RP);
+        Pgem.create(&RP);
+        Pground.create(&RP);
 		
 		SC.pipelinesAndDescriptorSetsInit();
 		txt.pipelinesAndDescriptorSetsInit();
@@ -605,6 +681,8 @@ protected:
         PskyBox.cleanup();
         P_PBR.cleanup();
         RP.cleanup();
+        Pgem.cleanup();
+        Pground.cleanup();
 
         SC.pipelinesAndDescriptorSetsCleanup();
         txt.pipelinesAndDescriptorSetsCleanup();
@@ -619,11 +697,15 @@ protected:
         DSLlocalPBR.cleanup();
         DSLskyBox.cleanup();
         DSLglobal.cleanup();
+        DSLlocalGem.cleanup();
+        DSLground.cleanup();
 
         Pchar.destroy();
         PsimpObj.destroy();
         PskyBox.destroy();
         P_PBR.destroy();
+        Pgem.destroy();
+        Pground.destroy();
 
         RP.destroy();
 
@@ -764,7 +846,7 @@ protected:
     // --- Aggiorna tutti gli Uniform Buffer per il frame corrente ---
     void updateUniforms(uint32_t currentImage, float deltaT)
     {
-        const int CHAR_TECH_INDEX = 0, SIMP_TECH_INDEX = 1, GEM_TECH_INDEX = 2, SKY_TECH_INDEX = 3, PBR_TECH_INDEX = 4;
+        const int CHAR_TECH_INDEX = 0, SIMP_TECH_INDEX = 1, GEM_TECH_INDEX = 2, SKY_TECH_INDEX = 3, GROUND_TECH_INDEX = 4, PBR_TECH_INDEX = 5;
 
         const glm::mat4 lightView = glm::rotate(glm::mat4(1), glm::radians(-30.0f), glm::vec3(0.0f, 1.0f, 0.0f)) *
             glm::rotate(glm::mat4(1), glm::radians(-45.0f), glm::vec3(1.0f, 0.0f, 0.0f));
@@ -772,6 +854,11 @@ protected:
         gubo.lightDir = glm::vec3(lightView * glm::vec4(0.0f, 0.0f, 1.0f, 1.0f));
         gubo.lightColor = glm::vec4(1.0f);
         gubo.eyePos = cameraPos;
+        GlobalUniformBufferGround guboground{};
+        guboground.lightDir = glm::vec3(lightView * glm::vec4(0.0f, 0.0f, 1.0f, 1.0f));
+        guboground.lightColor = glm::vec4(1.0f);
+        guboground.eyePos = cameraPos;
+        guboground.eyePosNoSmooth = airplanePosition;
 
         UniformBufferObjectChar uboc{};
         uboc.debug1 = debug1;
@@ -829,6 +916,17 @@ protected:
             sbubo.mvpMat = ViewPrj * glm::translate(glm::mat4(1), cameraPos) * glm::scale(
                 glm::mat4(1), glm::vec3(100.0f));
             SC.TI[SKY_TECH_INDEX].I[0].DS[0][0]->map(currentImage, &sbubo, 0);
+        }
+
+        if (SC.TI[GROUND_TECH_INDEX].InstanceCount > 0)
+        {
+            UniformBufferObjectGround uboground{};
+            uboground.mMat = SC.TI[GROUND_TECH_INDEX].I[0].Wm;
+            uboground.mvpMat = ViewPrj * uboground.mMat;
+            uboground.nMat = glm::inverse(glm::transpose(uboground.mMat));
+            uboground.worldMat = groundBaseWm;
+            SC.TI[GROUND_TECH_INDEX].I[0].DS[0][0]->map(currentImage, &guboground, 0);
+            SC.TI[GROUND_TECH_INDEX].I[0].DS[0][1]->map(currentImage, &uboground, 0);
         }
 
         // Aggiornamento HUD (precedentemente in una funzione separata)
@@ -957,7 +1055,7 @@ protected:
             SC.TI[airplaneTechIdx].I[airplaneInstIdx].Wm = glm::translate(glm::mat4(1.0f), airplanePosition) *
                 glm::mat4_cast(finalOrientation) * glm::scale(glm::mat4(1.0f), airplaneScale);
 
-            glm::vec3 targetCameraPos;
+
             glm::vec3 targetCameraLookAt;
 
             if (glfwGetKey(window, GLFW_KEY_Q) == GLFW_PRESS)
@@ -1043,7 +1141,7 @@ protected:
         }
 
         // 5. Calcola la matrice di proiezione e la View-Projection finale
-        glm::mat4 projectionMatrix = glm::perspective(currentFov, Ar, 0.1f, 100.f);
+        glm::mat4 projectionMatrix = glm::perspective(currentFov, Ar, 0.1f, 300.f);
         projectionMatrix[1][1] *= -1; // Adatta a Vulkan
 
         ViewPrj = projectionMatrix * viewMatrix;
@@ -1053,7 +1151,6 @@ protected:
 
         alListener3f(AL_POSITION, cameraPos.x, cameraPos.y, cameraPos.z);
         alListener3f(AL_VELOCITY, airplaneVelocity.x, airplaneVelocity.y, airplaneVelocity.z);
-        std::cout << "Camera Position: " << cameraPos.x << ", " << cameraPos.y << ", " << cameraPos.z << "\n";
 
         // 1) Compute your “forward” (aka “at”) vector:
         glm::vec3 forward = glm::normalize(cameraLookAt - cameraPos);

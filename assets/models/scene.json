@@ -89,9 +89,6 @@
 				"eulerAngles": [-90, 90, 0],
 				"scale": [0.25, 0.25, 0.25],
 				"translate": [-10, 0, 0]
-			},
-			{"id": "2Dplane",  "model": "2Dplane",   "texture": ["Pavement_Concrete_Marked_Footprints_UV_CM_1", "pnois"],
-				"scale": [10, 10, 10]
 			}
 		]},
 		{"technique": "CookTorranceGem", "elements": [
@@ -148,15 +145,14 @@
 		]},
 		{"technique": "SkyBox", "elements": [
 			{"id": "skybox",  "model": "skybox",   "texture": ["skybox"]}
-		]}, 
+		]},
+		{"technique": "GroundShader", "elements": [
+			{"id": "2Dplane",  "model": "2Dplane",   "texture": ["Pavement_Concrete_Marked_Footprints_UV_CM_1", "pnois"],
+				"scale": [100, 100, 100]
+			}
+		]},
 		{"technique": "PBR", "elements": [
-			{"id": "scb",  "model": "scb",   "texture": ["scba", "scbnm", "scbmt", "scbrf"],
-				"translate": [0, 0, 0],
-				"scale": [0.0015, 0.0015, 0.0015]},
-			{"id": "ground",  "model": "ground",   "texture": ["Pavement_Concrete_Marked_Footprints_UV_CM_1", "PavementConcreteNM", "scbmt", "Untitled"],
-				"translate": [100, 0, 100],
-				"scale": [0, 0, 0]
-			},
+
 
 			{"id": "buLm0",  "model": "buLm0",   "texture": ["BRICK8", "Brick8NM", "scbmt", "Untitled"]},
 			{"id": "buLm1",  "model": "buLm1",   "texture": ["ROOFTOP", "RooftopNM", "scbmt", "Untitled"]},
