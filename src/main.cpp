@@ -54,7 +54,8 @@ struct GlobalUniformBufferObject
     alignas(16) glm::vec3 eyePos;
 };
 
-struct GlobalUniformBufferGround {
+struct GlobalUniformBufferGround
+{
     alignas(16) glm::vec3 lightDir;
     alignas(16) glm::vec4 lightColor;
     alignas(16) glm::vec3 eyePos;
@@ -94,14 +95,27 @@ struct skyBoxUniformBufferObject
 class E09 : public BaseProject
 {
 protected:
-    enum CameraMode {FIRST_PERSON, THIRD_PERSON};
-    
+    enum CameraMode { FIRST_PERSON, THIRD_PERSON };
 
+    // Nuova macchina a stati per il comportamento dell'aereo
+    enum AirplaneState { STATE_STATIONARY, STATE_MOVING, STATE_FALLING };
+
+    AirplaneState airplaneState = STATE_STATIONARY;
+
+    bool engineOn = false;
+    float currentSpeed = 0.0f;
+
+    // Costanti per il nuovo modello di volo
+    const float ACCELERATION = 3.0f; // Tasso di accelerazione
+    const float MAX_SPEED = 20.0f; // Velocità massima
+    const float DECELERATION = 3.0f; // Tasso di decelerazione (freno/resistenza)
+    const float GRAVITY = 9.81f;
     CameraMode currentCameraMode = THIRD_PERSON;
     // Here you list all the Vulkan objects you need:
 
     // Descriptor Layouts [what will be passed to the shaders]
-    DescriptorSetLayout DSLlocalChar, DSLlocalSimp, DSLlocalGem, DSLlocalPBR, DSLglobal, DSLglobalGround, DSLskyBox, DSLground;
+    DescriptorSetLayout DSLlocalChar, DSLlocalSimp, DSLlocalGem, DSLlocalPBR, DSLglobal, DSLglobalGround, DSLskyBox,
+                        DSLground;
 
     // Vertex formants, Pipelines [Shader couples] and Render passes
     VertexDescriptor VDchar;
@@ -181,10 +195,10 @@ protected:
     float visualRollAngle = 0.0f;
     glm::vec3 currentShakeOffset = glm::vec3(0.0f);
 
-	ALCdevice* device = nullptr;
-	ALCcontext* context = nullptr;
-	ALuint audio_source = -1;
-	ALuint audio_buffer = -1;
+    ALCdevice* device = nullptr;
+    ALCcontext* context = nullptr;
+    ALuint audio_source = -1;
+    ALuint audio_buffer = -1;
 
 
     // Indici per il pavimento
@@ -242,15 +256,15 @@ protected:
                        });
 
         DSLglobalGround.init(this, {
-                           // this array contains the binding:
-                           // first  element : the binding number
-                           // second element : the type of element (buffer or texture)
-                           // third  element : the pipeline stage where it will be used
-                           {
-                               0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_ALL_GRAPHICS,
-                               sizeof(GlobalUniformBufferGround), 1
-                           }
-                       });
+                                 // this array contains the binding:
+                                 // first  element : the binding number
+                                 // second element : the type of element (buffer or texture)
+                                 // third  element : the pipeline stage where it will be used
+                                 {
+                                     0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_ALL_GRAPHICS,
+                                     sizeof(GlobalUniformBufferGround), 1
+                                 }
+                             });
 
         DSLlocalChar.init(this, {
                               // this array contains the binding:
@@ -291,17 +305,17 @@ protected:
                          });
 
         DSLground.init(this, {
-                             // this array contains the binding:
-                             // first  element : the binding number
-                             // second element : the type of element (buffer or texture)
-                             // third  element : the pipeline stage where it will be used
-                             {
-                                 0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_VERTEX_BIT,
-                                 sizeof(UniformBufferObjectGround), 1
-                             },
-                             {1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 0, 1},
-                             {2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 1, 1}
-                         });
+                           // this array contains the binding:
+                           // first  element : the binding number
+                           // second element : the type of element (buffer or texture)
+                           // third  element : the pipeline stage where it will be used
+                           {
+                               0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_VERTEX_BIT,
+                               sizeof(UniformBufferObjectGround), 1
+                           },
+                           {1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 0, 1},
+                           {2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 1, 1}
+                       });
 
         DSLskyBox.init(this, {
                            {
@@ -386,21 +400,21 @@ protected:
                    });
 
         VDground.init(this, {
-                       {0, sizeof(VertexSimp), VK_VERTEX_INPUT_RATE_VERTEX}
-                   }, {
-                       {
-                           0, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(VertexSimp, pos),
-                           sizeof(glm::vec3), POSITION
-                       },
-                       {
-                           0, 1, VK_FORMAT_R32G32B32_SFLOAT, offsetof(VertexSimp, norm),
-                           sizeof(glm::vec3), NORMAL
-                       },
-                       {
-                           0, 2, VK_FORMAT_R32G32_SFLOAT, offsetof(VertexSimp, UV),
-                           sizeof(glm::vec2), UV
-                       }
-                   });
+                          {0, sizeof(VertexSimp), VK_VERTEX_INPUT_RATE_VERTEX}
+                      }, {
+                          {
+                              0, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(VertexSimp, pos),
+                              sizeof(glm::vec3), POSITION
+                          },
+                          {
+                              0, 1, VK_FORMAT_R32G32B32_SFLOAT, offsetof(VertexSimp, norm),
+                              sizeof(glm::vec3), NORMAL
+                          },
+                          {
+                              0, 2, VK_FORMAT_R32G32_SFLOAT, offsetof(VertexSimp, UV),
+                              sizeof(glm::vec2), UV
+                          }
+                      });
 
         VDskyBox.init(this, {
                           {0, sizeof(skyBoxVertex), VK_VERTEX_INPUT_RATE_VERTEX}
@@ -457,7 +471,7 @@ protected:
         Pgem.init(this, &VDgem, "shaders/SimplePosNormUV.vert.spv", "shaders/CookTorrance.frag.spv",
                   {&DSLglobal, &DSLlocalGem});
         Pground.init(this, &VDground, "shaders/GroundVertex.vert.spv", "shaders/CookTorranceGround.frag.spv",
-                  {&DSLglobalGround, &DSLground});
+                     {&DSLglobalGround, &DSLground});
 
         PskyBox.init(this, &VDskyBox, "shaders/SkyBoxShader.vert.spv", "shaders/SkyBoxShader.frag.spv", {&DSLskyBox});
         PskyBox.setCompareOp(VK_COMPARE_OP_LESS_OR_EQUAL);
@@ -614,15 +628,16 @@ protected:
         noise.SetSeed(1337);
         noise.SetNoiseType(FastNoise::Perlin);
 
-		gemWorlds.resize(10);
-		for (auto& M : gemWorlds) {
-			M =
-				glm::translate(glm::mat4(1.0f),
-							 glm::vec3(distX(rng), distY(rng), distZ(rng)))
-				* glm::scale(glm::mat4(1.0f), glm::vec3(0.05f));
-		}
+        gemWorlds.resize(10);
+        for (auto& M : gemWorlds)
+        {
+            M =
+                glm::translate(glm::mat4(1.0f),
+                               glm::vec3(distX(rng), distY(rng), distZ(rng)))
+                * glm::scale(glm::mat4(1.0f), glm::vec3(0.05f));
+        }
 
-		audioInit();
+        audioInit();
 
         for (int i = 0; i < PRs.size(); i++)
         {
@@ -653,25 +668,26 @@ protected:
 
         assert(groundTechIdx >= 0 && groundInstIdx >= 0);
 
-		std::cout << "Init done!\n";
-	}
-	
-	// Here you create your pipelines and Descriptor Sets!
-	void pipelinesAndDescriptorSetsInit() {
-		// creates the render pass
-		RP.create();
-		
-		// This creates a new pipeline (with the current surface), using its shaders for the provided render pass
-		Pchar.create(&RP);
-		PsimpObj.create(&RP);
-		PskyBox.create(&RP);
-		P_PBR.create(&RP);
+        std::cout << "Init done!\n";
+    }
+
+    // Here you create your pipelines and Descriptor Sets!
+    void pipelinesAndDescriptorSetsInit()
+    {
+        // creates the render pass
+        RP.create();
+
+        // This creates a new pipeline (with the current surface), using its shaders for the provided render pass
+        Pchar.create(&RP);
+        PsimpObj.create(&RP);
+        PskyBox.create(&RP);
+        P_PBR.create(&RP);
         Pgem.create(&RP);
         Pground.create(&RP);
-		
-		SC.pipelinesAndDescriptorSetsInit();
-		txt.pipelinesAndDescriptorSetsInit();
-	}
+
+        SC.pipelinesAndDescriptorSetsInit();
+        txt.pipelinesAndDescriptorSetsInit();
+    }
 
     // Here you destroy your pipelines and Descriptor Sets!
     void pipelinesAndDescriptorSetsCleanup()
@@ -709,31 +725,35 @@ protected:
 
         RP.destroy();
 
-		SC.localCleanup();	
-		txt.localCleanup();
-		
-		for(int ian = 0; ian < N_ANIMATIONS; ian++) {
-			Anim[ian].cleanup();
-		}
+        SC.localCleanup();
+        txt.localCleanup();
 
-		audioCleanUp();
-	}
-	
-	// Here it is the creation of the command buffer:
-	// You send to the GPU all the objects you want to draw,
-	// with their buffers and textures
-	static void populateCommandBufferAccess(VkCommandBuffer commandBuffer, int currentImage, void *Params) {
-		// Simple trick to avoid having always 'T->'
-		// in che code that populates the command buffer!
-		std::cout << "Populating command buffer for " << currentImage << "\n";
-		E09 *T = (E09 *)Params;
-		T->populateCommandBuffer(commandBuffer, currentImage);
-	}
-	// This is the real place where the Command Buffer is written
-	void populateCommandBuffer(VkCommandBuffer commandBuffer, int currentImage) {
-		std::cout << "Let's command buffer!";
-		// begin standard pass
-		RP.begin(commandBuffer, currentImage);
+        for (int ian = 0; ian < N_ANIMATIONS; ian++)
+        {
+            Anim[ian].cleanup();
+        }
+
+        audioCleanUp();
+    }
+
+    // Here it is the creation of the command buffer:
+    // You send to the GPU all the objects you want to draw,
+    // with their buffers and textures
+    static void populateCommandBufferAccess(VkCommandBuffer commandBuffer, int currentImage, void* Params)
+    {
+        // Simple trick to avoid having always 'T->'
+        // in che code that populates the command buffer!
+        std::cout << "Populating command buffer for " << currentImage << "\n";
+        E09* T = (E09*)Params;
+        T->populateCommandBuffer(commandBuffer, currentImage);
+    }
+
+    // This is the real place where the Command Buffer is written
+    void populateCommandBuffer(VkCommandBuffer commandBuffer, int currentImage)
+    {
+        std::cout << "Let's command buffer!";
+        // begin standard pass
+        RP.begin(commandBuffer, currentImage);
 
         SC.populateCommandBuffer(commandBuffer, 0, currentImage);
 
@@ -749,6 +769,7 @@ protected:
         baseFov -= yoffset * FOV_SENSITIVITY;
         baseFov = glm::clamp(baseFov, minFov, maxFov);
     }
+
     // --- Helper per la gestione dell'input con debouncing ---
     // Restituisce true solo sul primo frame in cui il tasto viene premuto.
     bool handleDebouncedKeyPress(int key)
@@ -808,7 +829,9 @@ protected:
     }
 
     // --- Prototipo della funzione per gestire l'accelerazione ---
-    void handleAirplaneBoost(GLFWwindow* window, float deltaT, float& currentSpeedMultiplier, float AIRPLANE_FORWARD_SPEED, glm::vec3& localForward, glm::vec3& airplanePosition) {
+    void handleAirplaneBoost(GLFWwindow* window, float deltaT, float& currentSpeedMultiplier,
+                             float AIRPLANE_FORWARD_SPEED, glm::vec3& localForward, glm::vec3& airplanePosition)
+    {
         const float BOOST_MULTIPLIER = 2.0f; // Moltiplicatore di velocità quando si preme spazio
         const float ACCELERATION_RATE = 2.0f; // Velocità di accelerazione/decelerazione
 
@@ -846,7 +869,8 @@ protected:
     // --- Aggiorna tutti gli Uniform Buffer per il frame corrente ---
     void updateUniforms(uint32_t currentImage, float deltaT)
     {
-        const int CHAR_TECH_INDEX = 0, SIMP_TECH_INDEX = 1, GEM_TECH_INDEX = 2, SKY_TECH_INDEX = 3, GROUND_TECH_INDEX = 4, PBR_TECH_INDEX = 5;
+        const int CHAR_TECH_INDEX = 0, SIMP_TECH_INDEX = 1, GEM_TECH_INDEX = 2, SKY_TECH_INDEX = 3, GROUND_TECH_INDEX =
+                      4, PBR_TECH_INDEX = 5;
 
         const glm::mat4 lightView = glm::rotate(glm::mat4(1), glm::radians(-30.0f), glm::vec3(0.0f, 1.0f, 0.0f)) *
             glm::rotate(glm::mat4(1), glm::radians(-45.0f), glm::vec3(1.0f, 0.0f, 0.0f));
@@ -999,17 +1023,59 @@ protected:
 
         if (airplaneInitialized)
         {
-            // ========== MODO AEREO ==========
-            const float AIRPLANE_FORWARD_SPEED = 7.0f;
+            // ========== NUOVA LOGICA DI VOLO A STATI ==========
+
+            // --- Input per accensione/spegnimento motore ---
+            if (handleDebouncedKeyPress(GLFW_KEY_F))
+            {
+                engineOn = !engineOn;
+            }
+
+            // --- Macchina a Stati ---
+            switch (airplaneState)
+            {
+            case STATE_STATIONARY:
+                // Frena dolcemente fino a fermarsi
+                currentSpeed = glm::mix(currentSpeed, 0.0f, DECELERATION * deltaT);
+                if (engineOn)
+                {
+                    // Se il motore si accende, passa allo stato di movimento
+                    airplaneState = STATE_MOVING;
+                }
+                break;
+
+            case STATE_MOVING:
+                if (engineOn)
+                {
+                    // Accelera fino alla velocità massima
+                    currentSpeed = glm::mix(currentSpeed, MAX_SPEED, ACCELERATION * deltaT);
+                }
+                else
+                {
+                    // Se il motore si spegne, passa allo stato stazionario per frenare
+                    airplaneState = STATE_STATIONARY;
+                }
+                break;
+
+            case STATE_FALLING:
+                if (!engineOn)
+                {
+                    currentSpeed = glm::mix(currentSpeed, 0.0f, ACCELERATION * deltaT);
+                }
+                else airplaneState = STATE_MOVING;
+                break;
+            }
+
+
+            // --- Controlli di Volo (attivi solo se c'è un minimo di velocità) ---
             const float PITCH_RATE = glm::radians(45.0f);
-            const float YAW_RATE = glm::radians(100.0f);
-            const float MAX_VISUAL_ROLL_ANGLE = glm::radians(35.0f); // Inclinazione massima
-            const float ROLL_INTERP_SPEED = 5.0f; // Velocità di inclinazione e auto-livellamento
-            static float currentSpeedMultiplier = 1.f; // Moltiplicatore di velocità per il boost
-            // --- Lettura Input ---
+            const float YAW_RATE = glm::radians(60.0f);
+            const float MAX_VISUAL_ROLL_ANGLE = glm::radians(35.0f);
+            const float ROLL_INTERP_SPEED = 5.0f;
+
             float pitchInput = 0.0f;
             float yawInput = 0.0f;
-            float rollDirection = 0.0f; // Direzione del rollio: -1 (sinistra), 0 (neutro), 1 (destra)
+            float rollDirection = 0.0f;
 
             if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) pitchInput -= PITCH_RATE;
             if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) pitchInput += PITCH_RATE;
@@ -1024,37 +1090,41 @@ protected:
                 rollDirection += 1.f;
             }
 
-            glm::vec3 localForward = airplaneOrientation * glm::vec3(-1.0f, 0.0f, 0.0f);
-            glm::vec3 globalUp = glm::vec3(0.0f, 1.0f, 0.0f);
-            // Equivalent to cross product of the previous two vectors, without the risk of null vector, because
-            // we are using quaternions (as a pro)! :)
-            glm::vec3 localRight = airplaneOrientation * globalUp;
+            // Applica rotazioni solo se l'aereo si sta muovendo
+            if (currentSpeed > 0.1f)
+            {
+                glm::vec3 localRight = airplaneOrientation * glm::vec3(0.0f, 1.0f, 0.0f);
+                glm::vec3 globalUp = glm::vec3(0.0f, 1.0f, 0.0f);
+                glm::quat pitchRotation = glm::angleAxis(pitchInput * deltaT, localRight);
+                glm::quat yawRotation = glm::angleAxis(yawInput * deltaT, globalUp);
+                airplaneOrientation = glm::normalize(yawRotation * pitchRotation * airplaneOrientation);
 
-            glm::quat pitchRotation = glm::angleAxis(pitchInput * deltaT, localRight);
-            glm::quat yawRotation = glm::angleAxis(yawInput * deltaT, globalUp);
+                glm::vec3 localForward = airplaneOrientation * glm::vec3(-1.0f, 0.0f, 0.0f);
+                airplanePosition += localForward * currentSpeed * deltaT;
+                airplaneVelocity = localForward * currentSpeed; // Aggiorna la velocità per l'audio
 
-            airplaneOrientation = glm::normalize(yawRotation * pitchRotation * airplaneOrientation);
-            //airplanePosition += localForward * (AIRPLANE_FORWARD_SPEED * deltaT);
-            //airplanePosition += localForward * (AIRPLANE_FORWARD_SPEED * deltaT);
-            handleAirplaneBoost(window, deltaT, currentSpeedMultiplier, AIRPLANE_FORWARD_SPEED, localForward, airplanePosition);
+            }
+            else if (airplanePosition.y > 0.5f)
+            {
+                glm::vec3 globalUp = glm::vec3(0.0f, 1.0f, 0.0f);
+                airplanePosition += - globalUp * GRAVITY * deltaT;
+                airplaneVelocity = -globalUp * GRAVITY; // Aggiorna la velocità per l'audio
 
-            airplaneVelocity = localForward * AIRPLANE_FORWARD_SPEED * currentSpeedMultiplier;
-            // --- Logica del Rollio VISIVO (Nuova versione) ---
-            // 1. Determina l'angolo di inclinazione target in base all'input
+            }
+
+
+
+            // --- Logica del Rollio VISIVO ---
             float targetRollAngle = MAX_VISUAL_ROLL_ANGLE * rollDirection;
-
-            // 2. Interpola dolcemente l'angolo attuale verso il target.
-            // Questa singola riga gestisce sia l'inclinazione che l'auto-livellamento.
             float interpFactor = 1.0f - glm::exp(-ROLL_INTERP_SPEED * deltaT);
             visualRollAngle = glm::mix(visualRollAngle, targetRollAngle, interpFactor);
 
-            // --- Aggiornamento Matrice e Camera ---
+            // --- Aggiornamento Matrice e Camera (il resto del codice rimane invariato) ---
             glm::quat visualRollQuat = glm::angleAxis(visualRollAngle, glm::vec3(-1.0f, 0.0f, 0.0f));
             glm::quat finalOrientation = airplaneOrientation * visualRollQuat;
 
             SC.TI[airplaneTechIdx].I[airplaneInstIdx].Wm = glm::translate(glm::mat4(1.0f), airplanePosition) *
                 glm::mat4_cast(finalOrientation) * glm::scale(glm::mat4(1.0f), airplaneScale);
-
 
             glm::vec3 targetCameraLookAt;
 
@@ -1100,14 +1170,13 @@ protected:
             glm::vec3 targetShakeOffset = glm::vec3(0.0f);
             if (isBoosting)
             {
-             noiseOffset += deltaT * shakeSpeed;
-             glm::vec3 localShake = glm::vec3(
-                 0.0f,
-                 noise.GetNoise(noiseOffset, 10.0f) * shakeIntensity,
-                 noise.GetNoise(noiseOffset, 20.0f) * shakeIntensity
-                 );
-             targetShakeOffset = finalOrientation * localShake;
-
+                noiseOffset += deltaT * shakeSpeed;
+                glm::vec3 localShake = glm::vec3(
+                    0.0f,
+                    noise.GetNoise(noiseOffset, 10.0f) * shakeIntensity,
+                    noise.GetNoise(noiseOffset, 20.0f) * shakeIntensity
+                );
+                targetShakeOffset = finalOrientation * localShake;
             }
             const float SHAKE_INTERP_SPEED = 10.0f;
             float shakeInterpFactor = 1.0f - glm::exp(-SHAKE_INTERP_SPEED * deltaT);
@@ -1161,23 +1230,24 @@ protected:
         // 3) Build a true camera “up” vector that’s perpendicular to forward:
         //    this handles roll if you ever introduce it.
         //    (right × forward gives an up that’s perpendicular to both)
-        glm::vec3 right   = glm::normalize(glm::cross(forward, worldUp));
-        glm::vec3 up      = glm::cross(right, forward);
+        glm::vec3 right = glm::normalize(glm::cross(forward, worldUp));
+        glm::vec3 up = glm::cross(right, forward);
         float ori[6] = {
             forward.x, forward.y, forward.z,
-            up.x,      up.y,      up.z
+            up.x, up.y, up.z
         };
         alListenerfv(AL_ORIENTATION, ori);
 
         // build a translation matrix that follows the airplane in X and Z only:
         glm::mat4 groundXzFollow = glm::translate(
-          glm::mat4(1.0f),
-          glm::vec3(airplanePosition.x, groundY, airplanePosition.z)
+            glm::mat4(1.0f),
+            glm::vec3(airplanePosition.x, groundY, airplanePosition.z)
         );
 
         // if you originally had a scale on the ground, you can re-apply it:
         // glm::mat4 groundScale = glm::scale(glm::mat4(1.0f), yourGroundScale);
-        if (groundTechIdx >= 0 && groundInstIdx >= 0) {
+        if (groundTechIdx >= 0 && groundInstIdx >= 0)
+        {
             SC.TI[groundTechIdx].I[groundInstIdx].Wm = groundXzFollow * groundBaseWm;
         }
 
@@ -1185,7 +1255,8 @@ protected:
     }
 
 
-    void GameLogic(){
+    void GameLogic()
+    {
         for (int i = 0; i < gemWorlds.size(); i++)
         {
             // 1) Get gem position (translation column of the mat4)
@@ -1196,83 +1267,94 @@ protected:
             {
                 gemsCatched[i] = true;
                 gemWorlds[i] = glm::translate(glm::mat4(1.0f), gemPos)
-                             * glm::scale    (glm::mat4(1.0f), glm::vec3(0.0f));
+                    * glm::scale(glm::mat4(1.0f), glm::vec3(0.0f));
             }
         }
-        if (timer > 10.f && !timerDone) {
+        if (timer > 10.f && !timerDone)
+        {
             std::cout << "Time's up!" << std::endl;
             timerDone = true;
         }
     }
 
-    void audioInit() {
-		// 1) Open default device & create context
-		device  = alcOpenDevice(nullptr);
-		if (!device) { std::cerr<<"Failed to open audio device\n"; return ; }
-		context = alcCreateContext(device, nullptr);
-		if (!context || !alcMakeContextCurrent(context)) {
-			std::cerr<<"Failed to create/make context\n";
-			if (context) alcDestroyContext(context);
-			alcCloseDevice(device);
-			return ;
-		}
+    void audioInit()
+    {
+        // 1) Open default device & create context
+        device = alcOpenDevice(nullptr);
+        if (!device)
+        {
+            std::cerr << "Failed to open audio device\n";
+            return;
+        }
+        context = alcCreateContext(device, nullptr);
+        if (!context || !alcMakeContextCurrent(context))
+        {
+            std::cerr << "Failed to create/make context\n";
+            if (context) alcDestroyContext(context);
+            alcCloseDevice(device);
+            return;
+        }
 
-		// 3) Set up the listener (camera) defaults
-		//    Position at origin, no velocity
-		alListener3f(AL_POSITION, 0.0f, 0.0f, 0.0f);
-		alListener3f(AL_VELOCITY, 0.0f, 0.0f, 0.0f);
+        // 3) Set up the listener (camera) defaults
+        //    Position at origin, no velocity
+        alListener3f(AL_POSITION, 0.0f, 0.0f, 0.0f);
+        alListener3f(AL_VELOCITY, 0.0f, 0.0f, 0.0f);
 
-		//    Orientation: facing down −Z, with +Y as up
-		float listenerOri[] = {
-			0.0f, 0.0f, -1.0f,   // “forward” vector
-			0.0f, 1.0f,  0.0f    // “up” vector
-		};
-		alListenerfv(AL_ORIENTATION, listenerOri);
+        //    Orientation: facing down −Z, with +Y as up
+        float listenerOri[] = {
+            0.0f, 0.0f, -1.0f, // “forward” vector
+            0.0f, 1.0f, 0.0f // “up” vector
+        };
+        alListenerfv(AL_ORIENTATION, listenerOri);
 
-		alGenSources(1, &audio_source);
-		alSource3f(audio_source, AL_POSITION, 0, 0, 0);
-		alSource3f(audio_source, AL_VELOCITY, 0, 0, 0);
-		alDistanceModel(AL_INVERSE_DISTANCE_CLAMPED);
+        alGenSources(1, &audio_source);
+        alSource3f(audio_source, AL_POSITION, 0, 0, 0);
+        alSource3f(audio_source, AL_VELOCITY, 0, 0, 0);
+        alDistanceModel(AL_INVERSE_DISTANCE_CLAMPED);
 
-		loadWavToBuffer("assets/audios/audio_mono.wav");
+        loadWavToBuffer("assets/audios/audio_mono.wav");
 
-		alSourcei(audio_source, AL_BUFFER,  audio_buffer);
-		alSourcei(audio_source, AL_LOOPING, AL_TRUE);
-		alSourcef(audio_source, AL_REFERENCE_DISTANCE, 1.0f);
-		alSourcef(audio_source, AL_ROLLOFF_FACTOR, 1.0f);
-		alSourcef(audio_source, AL_MAX_DISTANCE, 500.0f);
-		alSourcei(audio_source, AL_SOURCE_RELATIVE, AL_FALSE);
-		alSourcePlay(audio_source);
-	}
-	void audioCleanUp() {
+        alSourcei(audio_source, AL_BUFFER, audio_buffer);
+        alSourcei(audio_source, AL_LOOPING, AL_TRUE);
+        alSourcef(audio_source, AL_REFERENCE_DISTANCE, 1.0f);
+        alSourcef(audio_source, AL_ROLLOFF_FACTOR, 1.0f);
+        alSourcef(audio_source, AL_MAX_DISTANCE, 500.0f);
+        alSourcei(audio_source, AL_SOURCE_RELATIVE, AL_FALSE);
+        alSourcePlay(audio_source);
+    }
 
-		alDeleteSources(1, &audio_source);
-		alDeleteBuffers(1, &audio_buffer);
-		alcMakeContextCurrent(nullptr);
-		alcDestroyContext(context);
-		alcCloseDevice(device);
-	}
-	void loadWavToBuffer(const char* fileName) {
-		// 2) Load WAV into an OpenAL buffer
-		drwav wav;
-		if (!drwav_init_file(&wav, fileName, nullptr)) {
-			std::cerr<<"Could not open audio.wav\n";
-			return ;
-		}
-		size_t totalSamples = wav.totalPCMFrameCount * wav.channels;
-		int16_t* pcmData = (int16_t*)malloc(totalSamples * sizeof(int16_t));
-		drwav_read_pcm_frames_s16(&wav, wav.totalPCMFrameCount, pcmData);
-		drwav_uninit(&wav);
+    void audioCleanUp()
+    {
+        alDeleteSources(1, &audio_source);
+        alDeleteBuffers(1, &audio_buffer);
+        alcMakeContextCurrent(nullptr);
+        alcDestroyContext(context);
+        alcCloseDevice(device);
+    }
 
-		ALenum format = (wav.channels == 1 ? AL_FORMAT_MONO16 : AL_FORMAT_STEREO16);
-		std::cerr << "Format: " << format << std::endl;
+    void loadWavToBuffer(const char* fileName)
+    {
+        // 2) Load WAV into an OpenAL buffer
+        drwav wav;
+        if (!drwav_init_file(&wav, fileName, nullptr))
+        {
+            std::cerr << "Could not open audio.wav\n";
+            return;
+        }
+        size_t totalSamples = wav.totalPCMFrameCount * wav.channels;
+        int16_t* pcmData = (int16_t*)malloc(totalSamples * sizeof(int16_t));
+        drwav_read_pcm_frames_s16(&wav, wav.totalPCMFrameCount, pcmData);
+        drwav_uninit(&wav);
 
-		alGenBuffers(1, &audio_buffer);
-		alBufferData(audio_buffer, format, pcmData,
-					 (ALsizei)(totalSamples * sizeof(int16_t)),
-					 wav.sampleRate);
-		free(pcmData);
-	}
+        ALenum format = (wav.channels == 1 ? AL_FORMAT_MONO16 : AL_FORMAT_STEREO16);
+        std::cerr << "Format: " << format << std::endl;
+
+        alGenBuffers(1, &audio_buffer);
+        alBufferData(audio_buffer, format, pcmData,
+                     (ALsizei)(totalSamples * sizeof(int16_t)),
+                     wav.sampleRate);
+        free(pcmData);
+    }
 
 private:
     static void scroll_callback(GLFWwindow* window, double xoffset, double yoffset)
@@ -1284,8 +1366,6 @@ private:
         }
     }
 };
-
-
 
 
 // This is the main: probably you do not need to touch this!
