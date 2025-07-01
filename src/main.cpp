@@ -16,6 +16,8 @@
 #include <thread>
 #include <chrono>
 #include <FastNoise.h>
+#include <ode/precision.h>
+#include <ode/ode.h>
 
 // The uniform buffer object used in this example
 struct VertexChar
@@ -95,6 +97,9 @@ struct skyBoxUniformBufferObject
 class E09 : public BaseProject
 {
 protected:
+
+    dWorldID odeWorld;
+    dSpaceID odeSpace;
     enum CameraMode { FIRST_PERSON, THIRD_PERSON };
 
     // Nuova macchina a stati per il comportamento dell'aereo
@@ -242,6 +247,14 @@ protected:
 
         glfwSetWindowUserPointer(window, this);
         glfwSetScrollCallback(window, scroll_callback);
+
+        dInitODE();
+        odeWorld = dWorldCreate();
+        odeSpace = dHashSpaceCreate(0); // Spazio per la gestione delle collisioni
+
+        std::cout << "Init done!\n";
+        std::cout << "ODE Initialized successfully.\n";
+
 
         // Descriptor Layouts [what will be passed to the shaders]
         DSLglobal.init(this, {
@@ -708,6 +721,12 @@ protected:
     // You also have to destroy the pipelines
     void localCleanup()
     {
+        // --- Cleanup di ODE ---
+        dSpaceDestroy(odeSpace);
+        dWorldDestroy(odeWorld);
+        dCloseODE();
+        std::cout << "ODE Cleaned up successfully.\n";
+
         DSLlocalChar.cleanup();
         DSLlocalSimp.cleanup();
         DSLlocalPBR.cleanup();
