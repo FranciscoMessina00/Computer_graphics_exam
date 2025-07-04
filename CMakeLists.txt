@@ -8,7 +8,7 @@ add_subdirectory(externals/ODE)
 # Set C++ standard
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_BUILD_TYPE Debug)
+set(CMAKE_BUILD_TYPE Release)
 
 # Platform-specific settings
 if(APPLE)
@@ -123,11 +123,11 @@ elseif(WIN32)
 
     # Add the OpenAL .lib path
     target_link_directories(${PROJECT_NAME} PRIVATE ${CMAKE_SOURCE_DIR}/audioLibrary)
-    target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_SOURCE_DIR}/externals/ODE/include)
+#    target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_SOURCE_DIR}/externals/ODE/include)
 
     # Link to the library
     target_link_libraries(${PROJECT_NAME} PRIVATE OpenAL32)
-    target_link_libraries(${PROJECT_NAME} PRIVATE ode_doublesd)
+    target_link_libraries(${PROJECT_NAME} PRIVATE ODE)
 
 
     # === Shader Compilation ===
