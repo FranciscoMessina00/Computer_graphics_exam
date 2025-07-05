@@ -90,7 +90,26 @@ void main() {
     float NdotL = max(dot(Nmap, L), 0.0);
     vec3 Lo = (kD * albedo / PI + specular) * radiance * NdotL;
 
-    vec3 ambient = vec3(0.015f) * albedo;
+
+    // Ambient light contribution colors
+    const float scaling = 0.03f;
+    // blu
+    const vec3 cxp = vec3(0.2,0.5,0.9) * scaling;
+    // blu arancione
+    const vec3 cxn = vec3(0.9,0.6,0.7) * scaling;
+    // blu cielo
+    const vec3 cyp = vec3(0.2,0.7,1.0) * scaling;
+    // verde prato
+    const vec3 cyn = vec3(0.34,0.76,0.4) * scaling;
+    // arancione
+    const vec3 czp = vec3(0.9,0.6,0.0) * scaling;
+    // blu scuro
+    const vec3 czn = vec3(0.24,0.0,0.91) * scaling;
+
+    vec3 ambient =((N.x > 0 ? cxp : cxn) * (N.x * N.x) +
+    (N.y > 0 ? cyp : cyn) * (N.y * N.y) +
+    (N.z > 0 ? czp : czn) * (N.z * N.z)) * albedo;
+    //vec3 ambient = vec3(0.015f) * albedo;
 
     vec3 color = ambient + Lo;
 

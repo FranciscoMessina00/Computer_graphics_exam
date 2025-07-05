@@ -45,6 +45,7 @@
 		{"id": "scbmt", "texture": "assets/textures/SoccerBall/Untitled.png", "format": "D"},
 		{"id": "scbrf", "texture": "assets/textures/SoccerBall/Untitled-0.png", "format": "D"},
 
+		{"id": "GrassAlbedo", "texture": "assets/textures/GrassTexture/grass_albedo.jpg", "format": "C"},
 		{"id": "BACKDOOR5", "texture": "assets/textures/MainScene/BACK DOOR 5.jpg", "format": "C"},
 		{"id": "Brick8NM", "texture": "assets/textures/MainScene/Brick8 NM.png", "format": "D"},
 		{"id": "BRICK8", "texture": "assets/textures/MainScene/BRICK 8.jpg", "format": "C"},
@@ -147,7 +148,7 @@
 			{"id": "skybox",  "model": "skybox",   "texture": ["skybox"]}
 		]},
 		{"technique": "GroundShader", "elements": [
-			{"id": "2Dplane",  "model": "2Dplane",   "texture": ["Pavement_Concrete_Marked_Footprints_UV_CM_1", "pnois"],
+			{"id": "2Dplane",  "model": "2Dplane",   "texture": ["GrassAlbedo", "pnois"],
 				"scale": [100, 100, 100]
 			}
 		]},
