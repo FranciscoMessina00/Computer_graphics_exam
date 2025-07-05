@@ -98,23 +98,11 @@ class E09 : public BaseProject
 {
 protected:
 
-    dWorldID odeWorld;
-    dSpaceID odeSpace;
     enum CameraMode { FIRST_PERSON, THIRD_PERSON };
 
     // Nuova macchina a stati per il comportamento dell'aereo
-    enum AirplaneState { STATE_STATIONARY, STATE_MOVING, STATE_FALLING };
-
-    AirplaneState airplaneState = STATE_STATIONARY;
-
-    bool engineOn = false;
-    float currentSpeed = 0.0f;
 
     // Costanti per il nuovo modello di volo
-    const float ACCELERATION = 3.0f; // Tasso di accelerazione
-    const float MAX_SPEED = 20.0f; // Velocità massima
-    const float DECELERATION = 3.0f; // Tasso di decelerazione (freno/resistenza)
-    const float GRAVITY = 9.81f;
     CameraMode currentCameraMode = THIRD_PERSON;
     // Here you list all the Vulkan objects you need:
 
@@ -159,9 +147,6 @@ protected:
     glm::vec3 cameraPos = {};
     glm::vec3 cameraLookAt = glm::vec3(0.0f);
     glm::vec3 targetCameraPos = {};
-    float Yaw = glm::radians(0.0f);
-    float Pitch = glm::radians(0.0f);
-    float Roll = glm::radians(0.0f);
 
     glm::vec4 debug1 = glm::vec4(0);
 
@@ -195,10 +180,21 @@ protected:
     glm::vec3 airplanePosition = {};
     glm::vec3 airplaneVelocity = {};
     glm::quat airplaneOrientation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
+    const glm::quat airplaneModelCorrection = glm::angleAxis(glm::radians(-90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
     glm::vec3 airplaneScale = glm::vec3(1.0f);
     bool airplaneInitialized = false;
+    bool isEngineOn = false;
+    bool isAirplaneOnGround = true;
     float visualRollAngle = 0.0f;
     glm::vec3 currentShakeOffset = glm::vec3(0.0f);
+
+    dWorldID odeWorld;
+    dSpaceID odeSpace;
+    dBodyID  odeAirplaneBody;
+    dGeomID  odeAirplaneGeom;
+    dMass    odeAirplaneMass;
+    dGeomID  odeGroundPlane;
+    dJointGroupID contactgroup;
 
     ALCdevice* device = nullptr;
     ALCcontext* context = nullptr;
@@ -249,8 +245,7 @@ protected:
         glfwSetScrollCallback(window, scroll_callback);
 
         dInitODE();
-        odeWorld = dWorldCreate();
-        odeSpace = dHashSpaceCreate(0); // Spazio per la gestione delle collisioni
+
 
         std::cout << "Init done!\n";
         std::cout << "ODE Initialized successfully.\n";
@@ -604,6 +599,28 @@ protected:
         {
             std::cout << "Airplane 'ap' found at Technique " << airplaneTechIdx << ", Instance " << airplaneInstIdx <<
                 "\n";
+
+            odeWorld = dWorldCreate();
+            odeSpace = dSimpleSpaceCreate(0);
+            dWorldSetGravity(odeWorld, 0, -9.81, 0); // Imposta la gravità!
+            contactgroup = dJointGroupCreate(0);
+            odeGroundPlane = dCreatePlane(odeSpace, 0, 1, 0, groundY);
+            // Crea il corpo rigido per l'aereo
+            odeAirplaneBody = dBodyCreate(odeWorld);
+            dBodySetPosition(odeAirplaneBody, airplanePosition.x, airplanePosition.y, airplanePosition.z);
+            dBodySetAngularDamping(odeAirplaneBody, 0.9f);
+            // Imposta la massa del corpo. È importante per la simulazione.
+            // Iniziamo con una massa di 100kg e la distribuiamo come una sfera.
+            dMassSetZero(&odeAirplaneMass);
+            dMassSetSphereTotal(&odeAirplaneMass, 1000.0f, 1.0f); // massa 100kg, raggio 1m
+            dBodySetMass(odeAirplaneBody, &odeAirplaneMass);
+
+            // Crea una geometria per le collisioni (per ora una semplice sfera)
+            // Anche se non hai collisioni, è buona norma averla.
+            odeAirplaneGeom = dCreateSphere(odeSpace, 1.0f); // raggio 1m
+            dGeomSetBody(odeAirplaneGeom, odeAirplaneBody);
+            // --- FINE SETUP ODE ---
+
         }
         else
         {
@@ -722,10 +739,15 @@ protected:
     void localCleanup()
     {
         // --- Cleanup di ODE ---
-        dSpaceDestroy(odeSpace);
-        dWorldDestroy(odeWorld);
+        if (airplaneInitialized) {
+            dGeomDestroy(odeAirplaneGeom);
+            dBodyDestroy(odeAirplaneBody);
+            dSpaceDestroy(odeSpace);
+            dWorldDestroy(odeWorld);
+        }
+
         dCloseODE();
-        std::cout << "ODE Cleaned up successfully.\n";
+        DSLlocalChar.cleanup();
 
         DSLlocalChar.cleanup();
         DSLlocalSimp.cleanup();
@@ -789,6 +811,35 @@ protected:
         baseFov = glm::clamp(baseFov, minFov, maxFov);
     }
 
+    // Callback per le collisioni
+    static void nearCallback(void* data, dGeomID o1, dGeomID o2) {
+        E09* app = (E09*)data; // Recupera il puntatore all'applicazione
+
+        dBodyID b1 = dGeomGetBody(o1);
+        dBodyID b2 = dGeomGetBody(o2);
+
+        // Ignora collisioni tra oggetti statici
+        if (b1 && b2 && dBodyIsKinematic(b1) && dBodyIsKinematic(b2)) return;
+
+        const int MAX_CONTACTS = 4; // Massimo numero di punti di contatto
+        dContact contact[MAX_CONTACTS];
+
+        int numc = dCollide(o1, o2, MAX_CONTACTS, &contact[0].geom, sizeof(dContact));
+
+        if (numc > 0) {
+            for (int i = 0; i < numc; i++) {
+                contact[i].surface.mode = dContactBounce | dContactSoftCFM;
+                contact[i].surface.mu = 0.9; // Attrito
+                contact[i].surface.bounce = 0.0; // Rimbalzo
+                contact[i].surface.bounce_vel = 0.0;
+                contact[i].surface.soft_cfm = 0.001;
+
+                dJointID c = dJointCreateContact(app->odeWorld, app->contactgroup, &contact[i]);
+                dJointAttach(c, b1, b2);
+            }
+        }
+    }
+
     // --- Helper per la gestione dell'input con debouncing ---
     // Restituisce true solo sul primo frame in cui il tasto viene premuto.
     bool handleDebouncedKeyPress(int key)
@@ -844,6 +895,12 @@ protected:
                 M = glm::translate(glm::mat4(1.0f), {distX(rng), distY(rng), distZ(rng)}) * glm::scale(
                     glm::mat4(1.0f), glm::vec3(0.025f));
             }
+        }
+
+        if (handleDebouncedKeyPress(GLFW_KEY_F))
+        {
+            isEngineOn = !isEngineOn;
+            std::cout << "Engine state: " << (isEngineOn ? "ON" : "OFF") << "\n";
         }
     }
 
@@ -1026,6 +1083,7 @@ protected:
         {
             const glm::mat4& initialWm = SC.TI[airplaneTechIdx].I[airplaneInstIdx].Wm;
             airplanePosition = glm::vec3(initialWm[3]);
+            dBodySetPosition(odeAirplaneBody, airplanePosition.x, airplanePosition.y, airplanePosition.z);
             airplaneScale = glm::vec3(glm::length(glm::vec3(initialWm[0])), glm::length(glm::vec3(initialWm[1])),
                                       glm::length(glm::vec3(initialWm[2])));
             if (airplaneScale.x == 0.0f) airplaneScale.x = 1.0f;
@@ -1037,66 +1095,129 @@ protected:
             rotationPart[2] /= airplaneScale.z;
             airplaneOrientation = glm::normalize(glm::quat_cast(rotationPart));
             airplaneInitialized = true;
+
         }
 
 
         if (airplaneInitialized)
         {
-            // ========== NUOVA LOGICA DI VOLO A STATI ==========
+            const dReal* pos = dBodyGetPosition(odeAirplaneBody);
+            isAirplaneOnGround = (pos[1] <= groundY + 0.2f);
+            std::cout << isAirplaneOnGround << std::endl;
 
-            // --- Input per accensione/spegnimento motore ---
-            if (handleDebouncedKeyPress(GLFW_KEY_F))
+            if (isAirplaneOnGround)
             {
-                engineOn = !engineOn;
+                // --- CONTROLLO A TERRA (TIPO AUTOMOBILE) ---
+                // Ruotiamo direttamente l'orientamento del corpo fisico.
+                const float TURN_RATE_GROUND = 0.5f; // Radianti al secondo. Puoi calibrare questo valore.
+                float turnAmount = 0.0f;
+
+                if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) turnAmount = TURN_RATE_GROUND * deltaT;
+                if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) turnAmount = -TURN_RATE_GROUND * deltaT;
+
+                if (turnAmount != 0.0f) {
+                    const dReal* currentRot = dBodyGetQuaternion(odeAirplaneBody);
+                    glm::quat currentQuat(currentRot[0], currentRot[1], currentRot[2], currentRot[3]);
+                    glm::quat turnQuat = glm::angleAxis(turnAmount, glm::vec3(0, 1, 0));
+                    glm::quat newQuat = glm::normalize(currentQuat * turnQuat);
+                    dQuaternion newOdeQuat = {newQuat.w, newQuat.x, newQuat.y, newQuat.z};
+                    dBodySetQuaternion(odeAirplaneBody, newOdeQuat);
+                }
+            }
+            else
+            {
+                // --- CONTROLLO IN VOLO (AERODINAMICO) ---
+                // Applichiamo una coppia per la virata (yaw).
+                const float YAW_TORQUE = 25000.0f; // Aumentiamo leggermente per più reattività in aria
+                if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS)
+                {
+                    dBodyAddRelTorque(odeAirplaneBody, 0, YAW_TORQUE, 0);
+                }
+                if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
+                {
+                    dBodyAddRelTorque(odeAirplaneBody, 0, -YAW_TORQUE, 0);
+                }
+
+                const float PITCH_TORQUE = 40000.0f; // Coppia per il beccheggio. Puoi calibrare questo valore.
+                if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
+                {
+                    // Applica una coppia per alzare il muso (pitch up)
+                    dBodyAddRelTorque(odeAirplaneBody, 0, 0, PITCH_TORQUE);
+                }
+                if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
+                {
+                    // Applica una coppia per abbassare il muso (pitch down)
+                    dBodyAddRelTorque(odeAirplaneBody, 0, 0, -PITCH_TORQUE);
+                }
+
+                const float MIN_SPEED_FOR_LIFT = 5.0f;  // Velocità minima per iniziare a generare portanza
+                const float MAX_SPEED_FOR_LIFT = 40.0f; // Velocità alla quale la portanza raggiunge il massimo
+
+                const dReal* velocity = dBodyGetLinearVel(odeAirplaneBody);
+                const dReal* rotation = dBodyGetRotation(odeAirplaneBody);
+
+                // Calcola la velocità frontale
+                glm::vec3 localForward(-1.0f, 0.0f, 0.0f);
+                glm::mat3 rotMatrix(rotation[0], rotation[1], rotation[2],
+                                    rotation[4], rotation[5], rotation[6],
+                                    rotation[8], rotation[9], rotation[10]);
+                glm::vec3 worldForward = rotMatrix * localForward;
+                glm::vec3 worldVelocity(velocity[0], velocity[1], velocity[2]);
+                float forwardSpeed = glm::dot(worldVelocity, worldForward);
+
+                if (forwardSpeed > MIN_SPEED_FOR_LIFT) {
+                    // Calcola un fattore di portanza da 0.0 a 1.0 in base alla velocità
+                    float liftFactor = (forwardSpeed - MIN_SPEED_FOR_LIFT) / (MAX_SPEED_FOR_LIFT - MIN_SPEED_FOR_LIFT);
+                    liftFactor = glm::clamp(liftFactor, 0.0f, 1.0f); // Assicura che il fattore sia tra 0 e 1
+
+                    // La forza massima di portanza è quella che compensa la gravità
+                    const float maxLiftForce = 1000.0f * 9.81f; // massa * gravità
+
+                    // Calcola la portanza attuale
+                    float currentLiftForce = maxLiftForce * liftFactor;
+
+                    // Applica la forza sempre verso l'alto (asse Y globale)
+                    dBodyAddForce(odeAirplaneBody, 0, currentLiftForce, 0);
+                }
             }
 
-            // --- Macchina a Stati ---
-            switch (airplaneState)
-            {
-            case STATE_STATIONARY:
-                // Frena dolcemente fino a fermarsi
-                currentSpeed = glm::mix(currentSpeed, 0.0f, DECELERATION * deltaT);
-                if (engineOn)
-                {
-                    // Se il motore si accende, passa allo stato di movimento
-                    airplaneState = STATE_MOVING;
-                }
-                break;
+            const dReal* velocity;
+            if (isEngineOn) {
+                const float MAX_SPEED = 35.0f; // Velocità massima in m/s. Puoi calibrare questo valore.
+                velocity = dBodyGetLinearVel(odeAirplaneBody);
+                dReal currentSpeed = dSqrt(velocity[0]*velocity[0] + velocity[1]*velocity[1] + velocity[2]*velocity[2]);
 
-            case STATE_MOVING:
-                if (engineOn)
-                {
-                    // Accelera fino alla velocità massima
-                    currentSpeed = glm::mix(currentSpeed, MAX_SPEED, ACCELERATION * deltaT);
-                }
-                else
-                {
-                    // Se il motore si spegne, passa allo stato stazionario per frenare
-                    airplaneState = STATE_STATIONARY;
-                }
-                break;
 
-            case STATE_FALLING:
-                if (!engineOn)
+                if (currentSpeed < MAX_SPEED)
                 {
-                    currentSpeed = glm::mix(currentSpeed, 0.0f, ACCELERATION * deltaT);
+                    const float ENGINE_FORCE = 10000.0f; // Aumentiamo la spinta per raggiungere prima la velocità massima
+                    dBodyAddRelForce(odeAirplaneBody, -ENGINE_FORCE, 0, 0);
                 }
-                else airplaneState = STATE_MOVING;
-                break;
             }
 
+            velocity = dBodyGetLinearVel(odeAirplaneBody);
+            const float DRAG_COEFFICIENT = 300.5f; // Puoi calibrare questo valore
+            dBodyAddForce(odeAirplaneBody,
+                          -velocity[0] * DRAG_COEFFICIENT,
+                          -velocity[1] * DRAG_COEFFICIENT,
+                          -velocity[2] * DRAG_COEFFICIENT);
 
+
+            dSpaceCollide(odeSpace, this, &nearCallback); // Controllo collisioni
+            const dReal stepSize = deltaT; // Usa il tempo trascorso dall'ultimo frame
+            dWorldStep(odeWorld, stepSize);
+            dJointGroupEmpty(contactgroup); // Clear contacts
+            pos = dBodyGetPosition(odeAirplaneBody);
+            const dReal* rot = dBodyGetQuaternion(odeAirplaneBody); // ODE usa quaternioni [w, x, y, z]
+            airplanePosition = glm::vec3(pos[0], pos[1], pos[2]);
+            // Nota: GLM usa quaternioni [w, x, y, z], ODE usa [w, x, y, z] (dQuaternion)
+            // quindi la conversione è diretta.
+
+            airplaneOrientation = glm::quat(rot[0], rot[1], rot[2], rot[3]);
             // --- Controlli di Volo (attivi solo se c'è un minimo di velocità) ---
-            const float PITCH_RATE = glm::radians(45.0f);
-            const float YAW_RATE = glm::radians(60.0f);
-            const float MAX_VISUAL_ROLL_ANGLE = glm::radians(35.0f);
-            const float ROLL_INTERP_SPEED = 5.0f;
 
-            float pitchInput = 0.0f;
-            float yawInput = 0.0f;
-            float rollDirection = 0.0f;
 
-            if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) pitchInput -= PITCH_RATE;
+            /*if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) pitchInput -= PITCH_RATE;
             if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) pitchInput += PITCH_RATE;
             if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS)
             {
@@ -1107,79 +1228,45 @@ protected:
             {
                 yawInput -= YAW_RATE;
                 rollDirection += 1.f;
-            }
-
-            // Applica rotazioni solo se l'aereo si sta muovendo
-            if (currentSpeed > 0.1f)
-            {
-                glm::vec3 localRight = airplaneOrientation * glm::vec3(0.0f, 1.0f, 0.0f);
-                glm::vec3 globalUp = glm::vec3(0.0f, 1.0f, 0.0f);
-                glm::quat pitchRotation = glm::angleAxis(pitchInput * deltaT, localRight);
-                glm::quat yawRotation = glm::angleAxis(yawInput * deltaT, globalUp);
-                airplaneOrientation = glm::normalize(yawRotation * pitchRotation * airplaneOrientation);
-
-                glm::vec3 localForward = airplaneOrientation * glm::vec3(-1.0f, 0.0f, 0.0f);
-                airplanePosition += localForward * currentSpeed * deltaT;
-                airplaneVelocity = localForward * currentSpeed; // Aggiorna la velocità per l'audio
-
-            }
-            else if (airplanePosition.y > 0.5f)
-            {
-                glm::vec3 globalUp = glm::vec3(0.0f, 1.0f, 0.0f);
-                airplanePosition += - globalUp * GRAVITY * deltaT;
-                airplaneVelocity = -globalUp * GRAVITY; // Aggiorna la velocità per l'audio
-
-            }
-
-
-
-            // --- Logica del Rollio VISIVO ---
-            float targetRollAngle = MAX_VISUAL_ROLL_ANGLE * rollDirection;
-            float interpFactor = 1.0f - glm::exp(-ROLL_INTERP_SPEED * deltaT);
-            visualRollAngle = glm::mix(visualRollAngle, targetRollAngle, interpFactor);
-
+            }*/
             // --- Aggiornamento Matrice e Camera (il resto del codice rimane invariato) ---
             glm::quat visualRollQuat = glm::angleAxis(visualRollAngle, glm::vec3(-1.0f, 0.0f, 0.0f));
-            glm::quat finalOrientation = airplaneOrientation * visualRollQuat;
+            glm::quat finalOrientation = airplaneOrientation * glm::angleAxis(glm::radians(-90.0f), glm::vec3(1.0f, 0.0f, 0.0f)) * visualRollQuat;
 
-            SC.TI[airplaneTechIdx].I[airplaneInstIdx].Wm = glm::translate(glm::mat4(1.0f), airplanePosition) *
-                glm::mat4_cast(finalOrientation) * glm::scale(glm::mat4(1.0f), airplaneScale);
+            /*SC.TI[airplaneTechIdx].I[airplaneInstIdx].Wm = glm::translate(glm::mat4(1.0f), airplanePosition) *
+                glm::mat4_cast(finalOrientation) * glm::scale(glm::mat4(1.0f), airplaneScale);*/
+            SC.TI[airplaneTechIdx].I[airplaneInstIdx].Wm =
+                glm::translate(glm::mat4(1.0f), airplanePosition) *
+                glm::mat4_cast(finalOrientation) *
+                glm::scale(glm::mat4(1.0f), airplaneScale);
 
-            glm::vec3 targetCameraLookAt;
+            // --- Logica della Telecamera ---
+            glm::vec3 cameraOffset;
+            glm::vec3 targetCameraLookAt = airplanePosition; // La telecamera guarda sempre l'aereo
 
-            if (glfwGetKey(window, GLFW_KEY_Q) == GLFW_PRESS)
-            {
-                glm::vec3 leftOffset = glm::vec3(2.0f, 8.0f, 2.0f);
-                targetCameraPos = airplanePosition + (airplaneOrientation * leftOffset);
-                targetCameraLookAt = airplanePosition;
-            }
-            else if (glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS)
-            {
-                glm::vec3 rightOffset = glm::vec3(2.0f, -8.0f, 2.0f);
-                targetCameraPos = airplanePosition + (airplaneOrientation * rightOffset);
-                targetCameraLookAt = airplanePosition;
-            }
-            else if (glfwGetKey(window, GLFW_KEY_X) == GLFW_PRESS)
-            {
-                glm::vec3 frontOffset = glm::vec3(-12.0f, 0.0f, 3.0f);
-                targetCameraPos = airplanePosition + (airplaneOrientation * frontOffset);
-                targetCameraLookAt = airplanePosition;
-            }
-            else
-            {
-                if (currentCameraMode == THIRD_PERSON)
-                {
-                    targetCameraPos = airplanePosition + (airplaneOrientation * glm::vec3(10.0f, 0.0f, 5.5f));
-                    targetCameraLookAt = airplanePosition;
-                }
-                else // FIRST_PERSON
-                {
-                    glm::vec3 noseOffset = glm::vec3(-2.15f, 0.0f, 1.2f);
-                    targetCameraPos = airplanePosition + (finalOrientation * noseOffset);
-                    targetCameraLookAt = targetCameraPos + (finalOrientation * glm::vec3(-1.0f, 0.0f, 0.0f));
-                }
+            if (glfwGetKey(window, GLFW_KEY_Q) == GLFW_PRESS) {
+                // Visuale da sinistra
+                cameraOffset = glm::vec3(0.0f, 5.0f, -20.0f);
+            } else if (glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS) {
+                // Visuale da destra
+                cameraOffset = glm::vec3(0.0f, 5.0f, 20.0f);
+            } else if (glfwGetKey(window, GLFW_KEY_X) == GLFW_PRESS) {
+                // Visuale da davanti
+                cameraOffset = glm::vec3(-20.0f, 5.0f, 0.0f);
+            } else if (currentCameraMode == FIRST_PERSON) {
+                // Visuale in prima persona (dall'abitacolo)
+                cameraOffset = glm::vec3(-0.5f, 0.5f, 0.0f);
+                glm::vec3 forwardDirection = airplaneOrientation * glm::vec3(-1.0f, 0.0f, 0.0f);
+                targetCameraLookAt = airplanePosition + (airplaneOrientation * cameraOffset) + forwardDirection;
+            } else { // THIRD_PERSON (default)
+                // Visuale da dietro (inseguimento)
+                cameraOffset = glm::vec3(15.0f, 5.0f, 0.0f);
             }
 
+            // Calcola la posizione target della telecamera ruotando l'offset con l'orientamento dell'aereo
+            targetCameraPos = airplanePosition + (airplaneOrientation * cameraOffset);
+
+            // Interpolazione per un movimento fluido della telecamera
             const float CAMERA_SMOOTHING = 5.0f;
             float cameraInterpFactor = 1.0f - glm::exp(-CAMERA_SMOOTHING * deltaT);
             cameraPos = glm::mix(cameraPos, targetCameraPos, cameraInterpFactor);
@@ -1204,30 +1291,6 @@ protected:
             glm::vec3 cameraUp = glm::normalize(finalOrientation * glm::vec3(0.0f, 0.0f, 1.f));
             viewMatrix = glm::lookAt(finalCameraPos, cameraLookAt, cameraUp);
         }
-        else
-        {
-            // ========== MODO PERSONAGGIO (Fallback) ==========
-            // Questa è la logica che mancava, presa dalla vecchia funzione GameLogic
-            const float ROT_SPEED = glm::radians(120.0f);
-            const float MOVE_SPEED = 2.0f;
-
-            Yaw -= ROT_SPEED * deltaT * r.y;
-            Pitch -= ROT_SPEED * deltaT * r.x;
-            Pitch = glm::clamp(Pitch, glm::radians(-8.75f), glm::radians(60.0f));
-
-            glm::vec3 ux = glm::rotate(glm::mat4(1.0f), Yaw, glm::vec3(0, 1, 0)) * glm::vec4(1, 0, 0, 1);
-            glm::vec3 uz = glm::rotate(glm::mat4(1.0f), Yaw, glm::vec3(0, 1, 0)) * glm::vec4(0, 0, -1, 1);
-
-            Pos += m.x * ux * MOVE_SPEED * deltaT;
-            Pos -= m.z * uz * MOVE_SPEED * deltaT;
-            Pos.y += m.y * MOVE_SPEED * deltaT;
-
-            cameraPos = Pos; // In prima persona, la camera è il personaggio
-            viewMatrix = glm::rotate(glm::mat4(1.0), -Pitch, glm::vec3(1, 0, 0)) *
-                glm::rotate(glm::mat4(1.0), -Yaw, glm::vec3(0, 1, 0)) *
-                glm::translate(glm::mat4(1.0), -Pos);
-        }
-
         // 5. Calcola la matrice di proiezione e la View-Projection finale
         glm::mat4 projectionMatrix = glm::perspective(currentFov, Ar, 0.1f, 300.f);
         projectionMatrix[1][1] *= -1; // Adatta a Vulkan
