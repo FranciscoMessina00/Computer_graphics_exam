@@ -185,6 +185,9 @@ protected:
     bool isEngineOn = false;
     bool isAirplaneOnGround = true;
     float visualRollAngle = 0.0f;
+    float thrustCoefficient = 50.0f; // Coefficiente di spinta
+    float speed = 5.0f; // Velocità attuale dell'aereo
+    float dragCoefficient = 1.0f;
     glm::vec3 currentShakeOffset = glm::vec3(0.0f);
 
     dWorldID odeWorld;
@@ -598,6 +601,7 @@ protected:
         {
             std::cout << "Airplane 'ap' found at Technique " << airplaneTechIdx << ", Instance " << airplaneInstIdx <<
                 "\n";
+            const dReal lx = 2.0, ly = 0.5, lz = 3.0; // example box dimensions
 
             odeWorld = dWorldCreate();
             odeSpace = dSimpleSpaceCreate(0);
@@ -611,12 +615,13 @@ protected:
             // Imposta la massa del corpo. È importante per la simulazione.
             // Iniziamo con una massa di 100kg e la distribuiamo come una sfera.
             dMassSetZero(&odeAirplaneMass);
-            dMassSetSphereTotal(&odeAirplaneMass, 1000.0f, 1.0f); // massa 100kg, raggio 1m
+            dMassSetBoxTotal(&odeAirplaneMass, 80.0f, lx, ly, lz);
             dBodySetMass(odeAirplaneBody, &odeAirplaneMass);
 
             // Crea una geometria per le collisioni (per ora una semplice sfera)
             // Anche se non hai collisioni, è buona norma averla.
-            odeAirplaneGeom = dCreateSphere(odeSpace, 1.0f); // raggio 1m
+
+            odeAirplaneGeom = dCreateBox(odeSpace, lx, ly, lz);
             dGeomSetBody(odeAirplaneGeom, odeAirplaneBody);
             // --- FINE SETUP ODE ---
         }
@@ -746,7 +751,6 @@ protected:
         }
 
         dCloseODE();
-        DSLlocalChar.cleanup();
 
         DSLlocalChar.cleanup();
         DSLlocalSimp.cleanup();
@@ -1111,116 +1115,178 @@ protected:
         {
             const dReal* velocity = dBodyGetLinearVel(odeAirplaneBody);
             const dReal* pos = dBodyGetPosition(odeAirplaneBody);
+            glm::vec3 globalVel{ velocity[0], velocity[1], velocity[2] };
+            float magSpeed = glm::length(globalVel);
+            constexpr float maxSpeed = 20.0f; // m/s, tune to your liking
+
+            const float basePitchAccel = 4.f; // m/s^2, tune to your liking
+            const float baseYawAccel = 4.f; // m/s^2, tune to your liking
+            const float baseRollAccel = 40.f; // m/s^2, tune to your liking
+
+            float a_pitch = basePitchAccel * (magSpeed / maxSpeed);
+            float a_yaw   = baseYawAccel   * (magSpeed / maxSpeed);
+            float a_roll  = baseRollAccel * (magSpeed / maxSpeed);
+
+            // assuming inertia tensor is diagonal in body frame
+            const dReal Ixx = odeAirplaneMass.I[0];
+            const dReal Iyy = odeAirplaneMass.I[5];
+            const dReal Izz = odeAirplaneMass.I[10];
+
+            if (magSpeed > 0.001f) {
+                // compute drag magnitude
+                float dragMag = dragCoefficient * magSpeed * magSpeed;
+
+                // drag always opposes motion
+                glm::vec3 dragDir = -globalVel / magSpeed;
+                glm::vec3 dragForce = dragMag * dragDir;
+
+                // simplest: apply in world‐space
+                dBodyAddForce(odeAirplaneBody,
+                              dragForce.x,
+                              dragForce.y,
+                              dragForce.z);
+            }
+            const float takeoffSpeed = 5.0f; // m/s, tune to your liking
+            // if (magSpeed > takeoffSpeed) {
+            //     const float rho = 1.225f; // kg/m^3, density of air at sea level
+            //     const float wingArea = 10.0f; // m^2, tune to your liking
+            //     const float CL = 1.0f; // lift coefficient, tune to your liking
+            //     float liftMag = 0.5f * rho * magSpeed * magSpeed * wingArea * CL;
+            //     const dReal* q = dBodyGetQuaternion(odeAirplaneBody);
+            //     glm::quat orient(q[0], q[1], q[2], q[3]);
+            //     glm::vec3 localUp = orient * glm::vec3(0,1,0);
+            //     dBodyAddForce(odeAirplaneBody,
+            //                   liftMag * localUp.x,
+            //                   liftMag * localUp.y,
+            //                   liftMag * localUp.z);
+            // }
+
             isAirplaneOnGround = (pos[1] <= groundY + 0.2f);
 
             if (isAirplaneOnGround)
             {
                 // --- CONTROLLO A TERRA (TIPO AUTOMOBILE) ---
-                const float TURN_RATE_GROUND = 0.8f;
-                float turnAmount = 0.0f;
 
-                if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) turnAmount = TURN_RATE_GROUND * deltaT;
-                if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) turnAmount = -TURN_RATE_GROUND * deltaT;
+                // if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) // gira a sinistra
+                // if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) // gira a destra
 
-                if (turnAmount != 0.0f)
-                {
-                    const dReal* currentRot = dBodyGetQuaternion(odeAirplaneBody);
-                    glm::quat currentQuat(currentRot[0], currentRot[1], currentRot[2], currentRot[3]);
-                    glm::quat turnQuat = glm::angleAxis(turnAmount, glm::vec3(0, 1, 0));
-                    glm::quat newQuat = glm::normalize(currentQuat * turnQuat);
-                    dQuaternion newOdeQuat = {newQuat.w, newQuat.x, newQuat.y, newQuat.z};
-                    dBodySetQuaternion(odeAirplaneBody, newOdeQuat);
-                }
             }
             else
             {
                 // --- CONTROLLO IN VOLO (AERODINAMICO) ---
-                const float YAW_TORQUE = 25000.0f;
                 if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS)
                 {
-                    dBodyAddRelTorque(odeAirplaneBody, 0, YAW_TORQUE, 0);
+                    dBodyAddRelTorque(odeAirplaneBody,
+                    0,
+                    + Iyy * a_yaw,
+                    0);
+                    dBodyAddRelTorque(odeAirplaneBody,
+                        + Izz * a_roll,
+                        0,
+                        0);
+
+                    // --- 3) Lateral “skid” force ---
+                    //  a) get the body → world rotation quaternion
+                    const dReal* q = dBodyGetQuaternion(odeAirplaneBody);
+                    glm::quat Q{ static_cast<float>(q[0]), static_cast<float>(q[1]), static_cast<float>(q[2]), static_cast<float>(q[3]) };
+
+                    // b) compute body‑space right axis ( +Z or +Y depending on convention;
+                    //    here we assume body +Z is right wing, adjust if yours is different )
+                    glm::vec3 leftB = glm::vec3(0, 0, 1);
+
+                    // c) rotate it into world space:
+                    glm::vec3 leftW = Q * leftB;
+
+                    // d) pick a lateral force magnitude (tune this!)
+                    float lateralForceMag = 50.0f;  // e.g. 500 N
+
+                    // e) apply that force sideways at the CG
+                    glm::vec3 F = leftW * lateralForceMag;
+                    dBodyAddForce(odeAirplaneBody, F.x, F.y, F.z);
                 }
                 if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
                 {
-                    dBodyAddRelTorque(odeAirplaneBody, 0, -YAW_TORQUE, 0);
+                    // --- 1) Roll torque (roll to the right) ---
+                    dBodyAddRelTorque(odeAirplaneBody,
+                                      - Izz * a_roll,  // body‑x axis roll
+                                      0,
+                                      0);
+
+                    // --- 2) Yaw torque (turn nose right) ---
+                    dBodyAddRelTorque(odeAirplaneBody,
+                                      0,
+                                      - Iyy * a_yaw,
+                                      0);
+
+                    // --- 3) Lateral “skid” force ---
+                    //  a) get the body → world rotation quaternion
+                    const dReal* q = dBodyGetQuaternion(odeAirplaneBody);
+                    glm::quat Q{ static_cast<float>(q[0]), static_cast<float>(q[1]), static_cast<float>(q[2]), static_cast<float>(q[3]) };
+
+                    // b) compute body‑space right axis ( +Z or +Y depending on convention;
+                    //    here we assume body +Z is right wing, adjust if yours is different )
+                    glm::vec3 rightB = glm::vec3(0, 0, -1);
+
+                    // c) rotate it into world space:
+                    glm::vec3 rightW = Q * rightB;
+
+                    // d) pick a lateral force magnitude (tune this!)
+                    float lateralForceMag = 50.0f;  // e.g. 500 N
+
+                    // e) apply that force sideways at the CG
+                    glm::vec3 F = rightW * lateralForceMag;
+                    dBodyAddForce(odeAirplaneBody, F.x, F.y, F.z);
                 }
 
                 const float PITCH_TORQUE = 40000.0f;
                 if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
                 {
-                    // FIX: Invertita la direzione della coppia per il beccheggio (pitch up)
-                    // Per alzare il muso (-X) verso l'alto (+Y), serve una coppia negativa sull'asse Z (destra).
-                    dBodyAddRelTorque(odeAirplaneBody, 0, 0, -PITCH_TORQUE);
+                    // positive pitch (nose up)
+                    dBodyAddRelTorque(odeAirplaneBody,
+                                      0,
+                                      0, + Ixx * a_pitch);
                 }
                 if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
                 {
-                    // FIX: Invertita la direzione della coppia per il beccheggio (pitch down)
-                    dBodyAddRelTorque(odeAirplaneBody, 0, 0, PITCH_TORQUE);
+                    // positive pitch (nose up)
+                    dBodyAddRelTorque(odeAirplaneBody,
+                                      0,
+                                      0, - Ixx * a_pitch);
                 }
             }
 
             // --- FISICA AERODINAMICA (attiva solo in volo) ---
             if (!isAirplaneOnGround)
             {
-                const dReal* rotation = dBodyGetRotation(odeAirplaneBody);
-                glm::mat3 rotMatrix(rotation[0], rotation[1], rotation[2],
-                                    rotation[4], rotation[5], rotation[6],
-                                    rotation[8], rotation[9], rotation[10]);
 
-                glm::vec3 worldVelocity(velocity[0], velocity[1], velocity[2]);
-                glm::vec3 localVelocity = glm::transpose(rotMatrix) * worldVelocity;
-                float speedSqr = glm::dot(localVelocity, localVelocity); // Velocità al quadrato
-
-
-                // Calcolo dell'angolo d'attacco (Angle of Attack, AoA)
-                // L'angolo tra la direzione in cui l'aereo si muove e la direzione in cui punta il muso
-                float angleOfAttack = 0.0f;
-                if (localVelocity.x != 0.0f)
-                {
-                    // Usiamo -localVelocity.x perché il modello punta lungo l'asse -X
-                    angleOfAttack = atan2(-localVelocity.y, -localVelocity.x);
-                }
-
-                // FIX: La portanza (Lift) è proporzionale al quadrato della velocità.
-                // Questo è il cambiamento più importante per permettere il decollo.
-                const float LIFT_COEFFICIENT = 2.5f; // Coefficiente ricalibrato per la velocità al quadrato
-                float liftForceMagnitude = angleOfAttack * LIFT_COEFFICIENT * speedSqr;
-
-                // FIX: Resistenze (Drag) rinominate e ribilanciate per essere meno punitive.
-                const float DRAG_FORWARD = 0.005f; // Resistenza frontale
-                const float DRAG_SIDE = 0.5f; // Resistenza laterale (per non scivolare)
-                const float DRAG_UP = 0.5f; // Resistenza verticale
-
-                glm::vec3 dragForceLocal;
-                // Applichiamo la resistenza usando la velocità al quadrato per coerenza
-                dragForceLocal.x = -localVelocity.x * DRAG_FORWARD * speedSqr;
-                dragForceLocal.y = -localVelocity.y * DRAG_UP * speedSqr;
-                dragForceLocal.z = -localVelocity.z * DRAG_SIDE * speedSqr;
-
-                glm::vec3 aerodynamicForceLocal = dragForceLocal;
-                // La portanza agisce verso l'alto nel sistema di riferimento locale dell'aereo (+Y)
-                aerodynamicForceLocal.y += liftForceMagnitude;
-
-                dBodyAddRelForce(odeAirplaneBody, aerodynamicForceLocal.x, aerodynamicForceLocal.y,
-                                 aerodynamicForceLocal.z);
             }
 
-            if (isEngineOn)
-            {
-                const float MAX_SPEED = 45.0f;
-                dReal currentSpeed = glm::length(glm::vec3(velocity[0], velocity[1], velocity[2]));
+            if (isEngineOn && magSpeed > takeoffSpeed) {
+                dWorldSetGravity(odeWorld, 0, 0, 0); // Imposta la gravità!
+            }else {
+                dWorldSetGravity(odeWorld, 0, -9.81, 0); // Imposta la gravità!
+            }
 
-                if (currentSpeed < MAX_SPEED)
-                {
-                    // La spinta del motore è applicata lungo l'asse -X (avanti)
-                    const float ENGINE_FORCE = 25000.0f; // Valore ribilanciato
-                    dBodyAddRelForce(odeAirplaneBody, -ENGINE_FORCE, 0, 0);
-                }
+            if (isEngineOn) {
+                const float thrustMagnitude = thrustCoefficient * speed; // tune this
+                dReal fx = thrustMagnitude;
+                dReal fy = 0;
+                dReal fz = 0;
+                dBodyAddRelForce(odeAirplaneBody, -fx, fy, fz);
+            }
+
+
+            if (magSpeed > maxSpeed) {
+                // glm::dvec3 v_clamped = v * (maxSpeed / speed);
+                // dBodySetLinearVel(odeAirplaneBody, v_clamped.x, v_clamped.y, v_clamped.z);
+                // Optionally clear applied forces so they don't instantly re-accelerate:
+                dBodySetForce(odeAirplaneBody, 0, 0, 0);
             }
 
             dSpaceCollide(odeSpace, this, &nearCallback);
             const dReal stepSize = deltaT;
             dWorldStep(odeWorld, stepSize);
+
             dJointGroupEmpty(contactgroup);
 
             pos = dBodyGetPosition(odeAirplaneBody);
