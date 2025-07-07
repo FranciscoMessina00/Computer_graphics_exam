@@ -5,29 +5,35 @@ layout(location = 0) in vec3 fragPos;
 layout(location = 1) in vec3 fragNorm;
 layout(location = 2) in vec2 fragUV;
 layout(location = 3) in vec4 fragTan;
+layout(location = 4) in vec2 fragUV_world;
 
 layout(location = 0) out vec4 outColor;
 
 layout(binding = 1, set = 1) uniform sampler2D albedoMap;
 layout(binding = 2, set = 1) uniform sampler2D normalMap;
-layout(binding = 3, set = 1) uniform sampler2D metallicMap;
+layout(binding = 3, set = 1) uniform sampler2D occlusionMap;
 layout(binding = 4, set = 1) uniform sampler2D roughnessMap;
 
 layout(binding = 0, set = 0) uniform GlobalUniformBufferObject {
     vec3 lightDir;
     vec4 lightColor;
     vec3 eyePos;
+    vec3 airplanePos;
 } gubo;
 
 const float PI = 3.14159265359;
+const float stretchFactor = 0.7; // stretch factor for shadow
+const float shadowSize = 3.0; // size of the shadow
+const float maxShadowStrength = 0.5; // 0.0 = no shadow, 1.0 = full shadow
+const float minShadowStrength = 0.01;
 
 mat3 computeTBN(vec3 N, vec3 T, float tangentW) {
     vec3 B = cross(N, T) * tangentW;
     return mat3(normalize(T), normalize(B), normalize(N));
 }
 
-vec3 getNormalFromMap(mat3 TBN) {
-    vec3 tangentNormal = texture(normalMap, fragUV).xyz * 2.0 - 1.0;
+vec3 getNormalFromMap(mat3 TBN, vec2 worldUV) {
+    vec3 tangentNormal = texture(normalMap, worldUV).xyz * 2.0 - 1.0;
     return normalize(TBN * tangentNormal);
 }
 
@@ -57,16 +63,45 @@ float GeometrySmith(vec3 N, vec3 V, vec3 L, float roughness) {
 }
 
 void main() {
-    vec3 albedo     = texture(albedoMap, fragUV).rgb; 
-    float metallic  = texture(metallicMap, fragUV).r;
-    float roughness = texture(roughnessMap, fragUV).r;
+    // -------------- simple shadow
+    vec3 planeProjected = gubo.airplanePos - gubo.lightDir * gubo.airplanePos.y / gubo.lightDir.y;
+    vec2 shadowCenter = planeProjected.xz;
+
+    vec2 fragXZ = fragPos.xz;
+
+    vec2 lightXZ = normalize(gubo.lightDir.xz);
+    vec2 dir = fragXZ - shadowCenter;
+    float d = dot(dir, lightXZ); // stretch along light
+    float ortho = length(dir - lightXZ * d); // perpendicular
+    float dist = sqrt((d * d) * stretchFactor + ortho * ortho);
+    //float dist = length(fragXZ - shadowCenter);
+
+    // Adjust shadow size based on airplane height
+    float shadowRadius = clamp(shadowSize - gubo.airplanePos.y * 0.05, 0.0, shadowSize);
+
+    float height = gubo.airplanePos.y;
+    float shadowStrength = mix(maxShadowStrength, minShadowStrength, clamp(height / 50.0, 0.0, 1.0));
+
+    // soft circular shadow (dark center, smooth edges)
+    float shadow = 1.0 - smoothstep(shadowRadius * 0.4, shadowRadius, dist);
+
+    // --------------
+
+    const float TILE_SIZE = 10.0;
+    vec2 worldUV = fragUV_world / TILE_SIZE;
+    vec2 offset  = gubo.airplanePos.xz / TILE_SIZE;
+    worldUV += offset;
+
+    vec3 albedo     = texture(albedoMap, worldUV).rgb;
+    float occlusion  = texture(occlusionMap, worldUV).r;
+    float roughness = texture(roughnessMap, worldUV).r;
 
 
     vec3 N = normalize(fragNorm);
     vec3 T = normalize(fragTan.xyz);
     float w = fragTan.w;
     mat3 TBN = computeTBN(N, T, w);
-    vec3 Nmap = getNormalFromMap(TBN);
+    vec3 Nmap = getNormalFromMap(TBN, worldUV);
 
     vec3 V = normalize(gubo.eyePos - fragPos);
     vec3 L = normalize(gubo.lightDir);
@@ -74,7 +109,7 @@ void main() {
     vec3 radiance = gubo.lightColor.rgb;
 
 
-    vec3 F0 = mix(vec3(0.04), albedo, metallic);
+    vec3 F0 = mix(vec3(0.04), albedo, 0.1);
 
     float NDF = DistributionGGX(Nmap, H, roughness);
     float G   = GeometrySmith(Nmap, V, L, roughness);
@@ -85,7 +120,7 @@ void main() {
 
     vec3 kS = F;
     vec3 kD = vec3(1.0) - kS;
-    kD *= 1.0 - metallic;
+    kD *= 1.0 - 0.1;
 
     float NdotL = max(dot(Nmap, L), 0.0);
     vec3 Lo = (kD * albedo / PI + specular) * radiance * NdotL;
@@ -111,7 +146,8 @@ void main() {
     (N.z > 0 ? czp : czn) * (N.z * N.z)) * albedo;
     //vec3 ambient = vec3(0.015f) * albedo;
 
-    vec3 color = ambient + Lo;
+    vec3 color = (ambient + Lo * occlusion);
+    color *= mix(vec3(1.0), vec3(1.0 - shadowStrength), shadow);
 
     outColor = vec4(color, 1.0);
     //outColor = vec4(albedo * vec3(clamp(dot(N, L),0.0,1.0)) + vec3(pow(clamp(dot(N, H),0.0,1.0), 160.0)) + ambient, 1.0);

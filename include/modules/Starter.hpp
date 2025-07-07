@@ -164,9 +164,10 @@ class Model {
 	VkDeviceMemory vertexBufferMemory;
 	VkBuffer indexBuffer;
 	VkDeviceMemory indexBufferMemory;
-	VertexDescriptor *VD;
 
 	public:
+	VertexDescriptor *VD;
+	size_t vertexBufferSize   = 0;
 	glm::mat4 Wm;
 	std::vector<unsigned char> vertices{};
 	std::vector<uint32_t> indices{};
@@ -178,6 +179,8 @@ class Model {
 	void loadModelGLTF(std::string file, bool encoded);
 	void createIndexBuffer();
 	void createVertexBuffer();
+	void updateVertexBuffer();
+	void initDynamicVertexBuffer(BaseProject *bp, size_t byteSize);
 
 	void init(BaseProject *bp, VertexDescriptor *VD, std::string file, ModelType MT);
 	void initFromAsset(BaseProject *bp, VertexDescriptor *VD, AssetFile *AF, std::string AN, int Mid = 0, std::string NN = "");
@@ -3285,6 +3288,33 @@ std::cout << model.nodes[0].rotation.size() << "\n";
 std::cout << model.nodes[0].scale.size() << "\n";
 */
 	makeGLTFwm(&model.nodes[0]);
+}
+
+void Model::initDynamicVertexBuffer(BaseProject *bp, size_t byteSize) {
+	BP = bp;
+	vertexBufferSize = byteSize;
+
+	// allocate once
+	BP->createBuffer(
+		vertexBufferSize,
+		VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+		vertexBuffer,
+		vertexBufferMemory
+	);
+}
+
+void Model::updateVertexBuffer() {
+	// map & copy into the *existing* buffer
+	void* data = nullptr;
+	vkMapMemory(BP->device,
+				vertexBufferMemory,
+				0,
+				vertexBufferSize,
+				0,
+				&data);
+	memcpy(data, vertices.data(), vertexBufferSize);
+	vkUnmapMemory(BP->device, vertexBufferMemory);
 }
 
 void Model::createVertexBuffer() {

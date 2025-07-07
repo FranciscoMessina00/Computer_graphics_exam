@@ -161,7 +161,9 @@ protected:
     float baseFov = glm::radians(45.0f);
     float boostFovIncrease = glm::radians(15.0f);
     float currentFov = 0.f;
-    FastNoise noise;
+    FastNoise noise, noiseGround;
+    std::vector<unsigned char> rawVB_original = {};
+    int counter = 0;
     float noiseOffset = 0.0f;
     float shakeIntensity = 0.2f;
     float shakeSpeed = 100.0f;
@@ -185,8 +187,8 @@ protected:
     bool isEngineOn = false;
     bool isAirplaneOnGround = true;
     float visualRollAngle = 0.0f;
-    float thrustCoefficient = 50.0f; // Coefficiente di spinta
-    float speed = 5.0f; // Velocità attuale dell'aereo
+    float thrustCoefficient = 200.0f; // Coefficiente di spinta
+    float speed = 5.0f;
     float dragCoefficient = 1.0f;
     glm::vec3 currentShakeOffset = glm::vec3(0.0f);
 
@@ -210,6 +212,7 @@ protected:
     // fix the ground’s Y (height) to whatever you want—say groundY = 0.0f:
     const float groundY = 0.1f;
     glm::mat4 groundBaseWm = glm::mat4(1.f);
+    Model* ground = nullptr;
 
     // Here you set the main application parameters
     void setWindowParameters()
@@ -342,7 +345,7 @@ protected:
                              // third  element : the pipeline stage where it will be used
                              {
                                  0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_VERTEX_BIT,
-                                 sizeof(UniformBufferObjectSimp), 1
+                                 sizeof(UniformBufferObjectGround), 1
                              },
                              {1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 0, 1},
                              {2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 1, 1},
@@ -478,7 +481,7 @@ protected:
 
         PsimpObj.init(this, &VDsimp, "shaders/SimplePosNormUV.vert.spv", "shaders/CookTorrance.frag.spv",
                       {&DSLglobal, &DSLlocalSimp});
-        Pgem.init(this, &VDgem, "shaders/SimplePosNormUV.vert.spv", "shaders/CookTorrance.frag.spv",
+        Pgem.init(this, &VDgem, "shaders/Gem.vert.spv", "shaders/CookTorranceGem.frag.spv",
                   {&DSLglobal, &DSLlocalGem});
         Pground.init(this, &VDground, "shaders/GroundVertex.vert.spv", "shaders/CookTorranceGround.frag.spv",
                      {&DSLglobalGround, &DSLground});
@@ -489,7 +492,7 @@ protected:
         PskyBox.setPolygonMode(VK_POLYGON_MODE_FILL);
 
         P_PBR.init(this, &VDtan, "shaders/SimplePosNormUvTan.vert.spv", "shaders/PBR.frag.spv",
-                   {&DSLglobal, &DSLlocalPBR});
+                   {&DSLglobalGround, &DSLlocalPBR});
 
         PRs.resize(6);
         PRs[0].init("CookTorranceChar", {
@@ -661,6 +664,12 @@ protected:
         noise.SetSeed(1337);
         noise.SetNoiseType(FastNoise::Perlin);
 
+        noiseGround.SetSeed(1356);
+        noiseGround.SetFrequency( 2.f );
+        noiseGround.SetNoiseType(FastNoise::Perlin);
+        noiseGround.SetFractalOctaves(2);
+        noiseGround.SetFractalGain(0.8f);
+
         gemWorlds.resize(10);
         for (auto& M : gemWorlds)
         {
@@ -672,11 +681,27 @@ protected:
 
         audioInit();
 
+        auto groundMeshId = SC.MeshIds["2DplaneTan"];
+        if (groundMeshId == -1)
+        {
+            std::cout << "ERROR: Ground mesh '2DplaneTan' not found in scene.\n";
+            exit(0);
+        }
+        else {
+            std::cout << "Ground mesh '2DplaneTan' found with ID: " << groundMeshId << "\n";
+            ground = SC.M[ groundMeshId ];
+            rawVB_original = ground->vertices;
+            // right after you fill `ground->vertices` for the very first time:
+            size_t byteSize = ground->vertices.size();  // bytes of your interleaved array
+            ground->initDynamicVertexBuffer(this /* your BaseProject ptr */, byteSize);
+            ground->updateVertexBuffer();
+        }
+
         for (int i = 0; i < PRs.size(); i++)
         {
             for (int j = 0; j < SC.TI[i].InstanceCount; j++)
             {
-                if (SC.TI[i].I[j].id != nullptr && *(SC.TI[i].I[j].id) == "2Dplane")
+                if (SC.TI[i].I[j].id != nullptr && *(SC.TI[i].I[j].id) == "2DplaneTan")
                 {
                     groundTechIdx = i;
                     groundInstIdx = j;
@@ -807,6 +832,58 @@ protected:
     // =================================================================================
     // Funzioni Helper Modulari
     // =================================================================================
+    void shift2Dplane() {
+        counter++;
+        ground->vertices = rawVB_original;
+        std::vector<unsigned char>& rawVB = ground->vertices;
+
+        // 3) figure out your stride and the offset of POSITION in it:
+        size_t stride    = ground->VD->Bindings[0].stride;
+        size_t posOffset = ground->VD->Position.offset;  // byte‑offset in each vertex
+
+        // 1) compute that same world‐space offset
+        glm::vec3 worldOffset = airplanePosition;
+        // std::cout << "Ground world pos: " << worldOffset.x << ", " << worldOffset.z << "\n";
+        glm::vec3 scale;
+        scale.x = glm::length(glm::vec3(groundBaseWm[0]));
+        scale.y = glm::length(glm::vec3(groundBaseWm[1]));
+        scale.z = glm::length(glm::vec3(groundBaseWm[2]));
+
+        // 2) walk vertices
+        for (size_t i = 0; i < rawVB.size(); i += stride) {
+            glm::vec3* p =
+                reinterpret_cast<glm::vec3*>(&rawVB[i + posOffset]);
+
+            // local XZ:
+            float lx = p->x * scale.x , lz = p->z * scale.z;
+
+            // // world XZ = local + plane‐translation
+            worldOffset.x = std::floor(worldOffset.x * 100.0f) / 100.0f;
+            worldOffset.z = std::floor(worldOffset.z * 100.0f) / 100.0f;
+
+            float wx = lx + worldOffset.x;
+            float wz = lz + worldOffset.z;
+
+            // float wz = 0.f;
+            // now sample noise in world coordinates
+            const float NOISE_SCALE  = 0.004f;  // try 0.1…1.0
+            const float HEIGHT_SCALE = 0.05f;  // how tall your hills are
+
+            float h = noiseGround.GetNoise(wx * NOISE_SCALE,
+                                           wz * NOISE_SCALE)
+                    * HEIGHT_SCALE;
+            if (i==0 * stride) {
+                // std::cout << "Ground local pos: " << lx << ", " << lz << "\n";
+                // std::cout << "Ground world pos: " << wx << ", " << wz << "\n";
+                std::cout << "Ground height: " << h << "\n";
+            }
+            p->y = h;
+        }
+        // 3) reupload:
+        ground->updateVertexBuffer();
+
+    }
+
     void handleMouseScroll(double yoffset)
     {
         const float FOV_SENSITIVITY = glm::radians(2.5f);
@@ -951,6 +1028,7 @@ protected:
     // --- Aggiorna tutti gli Uniform Buffer per il frame corrente ---
     void updateUniforms(uint32_t currentImage, float deltaT)
     {
+        shift2Dplane();
         const int CHAR_TECH_INDEX = 0, SIMP_TECH_INDEX = 1, GEM_TECH_INDEX = 2, SKY_TECH_INDEX = 3, GROUND_TECH_INDEX =
                       4, PBR_TECH_INDEX = 5;
 
@@ -994,13 +1072,15 @@ protected:
             SC.TI[SIMP_TECH_INDEX].I[inst_idx].DS[0][1]->map(currentImage, &ubos, 0);
         }
 
+        UniformBufferObjectGround ubogpbr{};
         for (int inst_idx = 0; inst_idx < SC.TI[PBR_TECH_INDEX].InstanceCount; ++inst_idx)
         {
-            ubos.mMat = SC.TI[PBR_TECH_INDEX].I[inst_idx].Wm;
-            ubos.mvpMat = ViewPrj * ubos.mMat;
-            ubos.nMat = glm::inverse(glm::transpose(ubos.mMat));
-            SC.TI[PBR_TECH_INDEX].I[inst_idx].DS[0][0]->map(currentImage, &gubo, 0);
-            SC.TI[PBR_TECH_INDEX].I[inst_idx].DS[0][1]->map(currentImage, &ubos, 0);
+            ubogpbr.mMat = SC.TI[PBR_TECH_INDEX].I[inst_idx].Wm;
+            ubogpbr.mvpMat = ViewPrj * ubogpbr.mMat;
+            ubogpbr.nMat = glm::inverse(glm::transpose(ubogpbr.mMat));
+            ubogpbr.worldMat = groundBaseWm;
+            SC.TI[PBR_TECH_INDEX].I[inst_idx].DS[0][0]->map(currentImage, &guboground, 0);
+            SC.TI[PBR_TECH_INDEX].I[inst_idx].DS[0][1]->map(currentImage, &ubogpbr, 0);
         }
 
         UniformBufferObjectSimp uboGem{};
@@ -1108,6 +1188,11 @@ protected:
             rotationPart[2] /= airplaneScale.z;
             airplaneOrientation = glm::normalize(glm::quat_cast(rotationPart));
             airplaneInitialized = true;
+
+            dBodySetLinearDamping(odeAirplaneBody, 0.005f); // adjust between 0.1–10.0
+
+            // dBodySetAngularDamping(odeAirplaneBody, 0.9f); // adjust between 0.1–1.0
+            // dBodySetAngularDampingThreshold(odeAirplaneBody, 0.01f); // adjust to your liking
         }
 
 
@@ -1119,18 +1204,19 @@ protected:
             float magSpeed = glm::length(globalVel);
             constexpr float maxSpeed = 20.0f; // m/s, tune to your liking
 
-            const float basePitchAccel = 4.f; // m/s^2, tune to your liking
-            const float baseYawAccel = 4.f; // m/s^2, tune to your liking
-            const float baseRollAccel = 40.f; // m/s^2, tune to your liking
+            const float basePitchAccel = 25.f; // m/s^2, tune to your liking
+            const float baseYawAccel = 20.f; // m/s^2, tune to your liking
+            const float baseRollAccel = 100.f; // m/s^2, tune to your liking
 
             float a_pitch = basePitchAccel * (magSpeed / maxSpeed);
             float a_yaw   = baseYawAccel   * (magSpeed / maxSpeed);
             float a_roll  = baseRollAccel * (magSpeed / maxSpeed);
 
             // assuming inertia tensor is diagonal in body frame
-            const dReal Ixx = odeAirplaneMass.I[0];
-            const dReal Iyy = odeAirplaneMass.I[5];
-            const dReal Izz = odeAirplaneMass.I[10];
+            const float inertiaScale = 1.f; // tune to your liking
+            const dReal Ixx = odeAirplaneMass.I[0] * inertiaScale;
+            const dReal Iyy = odeAirplaneMass.I[5] * inertiaScale;
+            const dReal Izz = odeAirplaneMass.I[10] * inertiaScale;
 
             if (magSpeed > 0.001f) {
                 // compute drag magnitude
@@ -1162,6 +1248,14 @@ protected:
             // }
 
             isAirplaneOnGround = (pos[1] <= groundY + 0.2f);
+            bool keysPressed = false;
+            const dReal* q = dBodyGetQuaternion(odeAirplaneBody);
+            glm::quat Q{ static_cast<float>(q[0]), static_cast<float>(q[1]), static_cast<float>(q[2]), static_cast<float>(q[3]) };
+
+            glm::vec3 worldUp     = Q * glm::vec3(0, 1, 0);   // current up
+            glm::vec3 desiredUp   = glm::vec3(0, 1, 0);       // world up
+
+            glm::vec3 worldForward = Q * glm::vec3(-1, 0, 0); // current forward
 
             if (isAirplaneOnGround)
             {
@@ -1176,6 +1270,7 @@ protected:
                 // --- CONTROLLO IN VOLO (AERODINAMICO) ---
                 if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS)
                 {
+                    keysPressed = true;
                     dBodyAddRelTorque(odeAirplaneBody,
                     0,
                     + Iyy * a_yaw,
@@ -1192,13 +1287,13 @@ protected:
 
                     // b) compute body‑space right axis ( +Z or +Y depending on convention;
                     //    here we assume body +Z is right wing, adjust if yours is different )
-                    glm::vec3 leftB = glm::vec3(0, 0, 1);
+                    glm::vec3 leftB = glm::normalize(glm::vec3(-0.5, 0, 1));
 
                     // c) rotate it into world space:
                     glm::vec3 leftW = Q * leftB;
 
                     // d) pick a lateral force magnitude (tune this!)
-                    float lateralForceMag = 50.0f;  // e.g. 500 N
+                    float lateralForceMag = 500.0f;  // e.g. 500 N
 
                     // e) apply that force sideways at the CG
                     glm::vec3 F = leftW * lateralForceMag;
@@ -1206,6 +1301,7 @@ protected:
                 }
                 if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
                 {
+                    keysPressed = true;
                     // --- 1) Roll torque (roll to the right) ---
                     dBodyAddRelTorque(odeAirplaneBody,
                                       - Izz * a_roll,  // body‑x axis roll
@@ -1225,44 +1321,78 @@ protected:
 
                     // b) compute body‑space right axis ( +Z or +Y depending on convention;
                     //    here we assume body +Z is right wing, adjust if yours is different )
-                    glm::vec3 rightB = glm::vec3(0, 0, -1);
+                    glm::vec3 rightB = glm::normalize(glm::vec3(-0.5, 0, -1));
 
                     // c) rotate it into world space:
                     glm::vec3 rightW = Q * rightB;
 
                     // d) pick a lateral force magnitude (tune this!)
-                    float lateralForceMag = 50.0f;  // e.g. 500 N
+                    float lateralForceMag = 500.0f;  // e.g. 500 N
 
                     // e) apply that force sideways at the CG
                     glm::vec3 F = rightW * lateralForceMag;
                     dBodyAddForce(odeAirplaneBody, F.x, F.y, F.z);
+
                 }
 
-                const float PITCH_TORQUE = 40000.0f;
                 if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
                 {
+                    keysPressed = true;
                     // positive pitch (nose up)
                     dBodyAddRelTorque(odeAirplaneBody,
                                       0,
                                       0, + Ixx * a_pitch);
+
+                    const float rho = 1.225f; // kg/m^3, density of air at sea level
+                    const float wingArea = 10.0f; // m^2, tune to your liking
+                    const float CL = 1.0f; // lift coefficient, tune to your liking
+                    float liftMag = 0.5f * rho * magSpeed * magSpeed * wingArea * CL;
+                    const dReal* q = dBodyGetQuaternion(odeAirplaneBody);
+                    glm::quat orient(q[0], q[1], q[2], q[3]);
+                    glm::vec3 localUp = orient * glm::vec3(0,-1,0);
+                    dBodyAddForce(odeAirplaneBody,
+                                  liftMag * localUp.x,
+                                  liftMag * localUp.y,
+                                  liftMag * localUp.z);
                 }
                 if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
                 {
+                    keysPressed = true;
                     // positive pitch (nose up)
                     dBodyAddRelTorque(odeAirplaneBody,
                                       0,
                                       0, - Ixx * a_pitch);
+
+                    const float rho = 1.225f; // kg/m^3, density of air at sea level
+                    const float wingArea = 10.0f; // m^2, tune to your liking
+                    const float CL = 1.0f; // lift coefficient, tune to your liking
+                    float liftMag = 0.5f * rho * magSpeed * magSpeed * wingArea * CL;
+                    const dReal* q = dBodyGetQuaternion(odeAirplaneBody);
+                    glm::quat orient(q[0], q[1], q[2], q[3]);
+                    glm::vec3 localUp = orient * glm::vec3(0,1,0);
+                    dBodyAddForce(odeAirplaneBody,
+                                  liftMag * localUp.x,
+                                  liftMag * localUp.y,
+                                  liftMag * localUp.z);
                 }
             }
 
-            // --- FISICA AERODINAMICA (attiva solo in volo) ---
-            if (!isAirplaneOnGround)
-            {
+            if (!keysPressed) {
+                // roll stabilizer (world torque)
+                std::cout << "Roll stabilizer\n";
+                glm::vec3 axis = glm::cross(worldUp, desiredUp);
+                float angle = glm::acos(glm::clamp(glm::dot(worldUp, desiredUp), -1.0f, 1.0f));
+                glm::vec3 torque = angle * axis * 2000.0f; // tune constant
+                dBodyAddTorque(odeAirplaneBody, torque.x, torque.y, torque.z);
 
+                // pitch stabilizer (body torque)
+                float pitchError = worldForward.z;
+                glm::vec3 pitchTorque = glm::vec3(0, 0, 1) * -pitchError * 5000.0f;
+                // dBodyAddRelTorque(odeAirplaneBody, pitchTorque.x, pitchTorque.y, pitchTorque.z);
             }
 
             if (isEngineOn && magSpeed > takeoffSpeed) {
-                dWorldSetGravity(odeWorld, 0, 0, 0); // Imposta la gravità!
+                dWorldSetGravity(odeWorld, 0, 0.f, 0); // Imposta la gravità!
             }else {
                 dWorldSetGravity(odeWorld, 0, -9.81, 0); // Imposta la gravità!
             }
