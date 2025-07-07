@@ -151,7 +151,8 @@ protected:
 
     std::vector<glm::mat4> gemWorlds; // world transforms for each spawned gem
     std::vector<bool> gemsCatched = {false, false, false, false, false, false, false, false, false, false};
-    float catchRadius = 2.f;
+    float gemScale = 0.20f; // scale of the gem model
+    float catchRadius = 2.5f;
     float timer = 0.f;
     bool timerDone = false;
     float gemAngle = 0.0f;
@@ -679,7 +680,7 @@ protected:
             M =
                 glm::translate(glm::mat4(1.0f),
                                glm::vec3(distX(rng), distY(rng), distZ(rng)))
-                * glm::scale(glm::mat4(1.0f), glm::vec3(0.05f));
+                * glm::scale(glm::mat4(1.0f), glm::vec3(gemScale));
         }
 
         audioInit();
@@ -979,7 +980,7 @@ protected:
             for (auto& M : gemWorlds)
             {
                 M = glm::translate(glm::mat4(1.0f), {distX(rng), distY(rng), distZ(rng)}) * glm::scale(
-                    glm::mat4(1.0f), glm::vec3(0.025f));
+                    glm::mat4(1.0f), glm::vec3(gemScale));
             }
         }
 
@@ -1092,7 +1093,7 @@ protected:
         {
             uboGem.mMat = gemWorlds[inst_idx] * spinY * glm::rotate(glm::mat4(1.0f), glm::radians(90.0f),
                                                                     glm::vec3(1, 0, 0)) * glm::scale(
-                glm::mat4(1.0f), glm::vec3(0.5f));
+                glm::mat4(1.0f), glm::vec3(gemScale));
             uboGem.mvpMat = ViewPrj * uboGem.mMat;
             uboGem.nMat = glm::inverse(glm::transpose(uboGem.mMat));
             SC.TI[GEM_TECH_INDEX].I[inst_idx].DS[0][0]->map(currentImage, &gubo, 0);
@@ -1209,11 +1210,12 @@ protected:
             updateUniforms(currentImage, deltaT);
 
             // 4) Stampa il testo “Premi SPAZIO per iniziare”
-            txt.print(0.f, 0.f, "PREMI P PER INIZIARE", 2, "CO", true, false, true, TAL_CENTER, TRH_CENTER);
+            txt.print(0.f, 0.f, "PREMI P PER INIZIARE", 2, "CO", true, false, true, TAL_CENTER, TRH_CENTER, TRV_TOP, {1, 1, 1, 1}, {0, 0, 0, 1}, {0, 0, 0, 0}, 2, 2);
             txt.updateCommandBuffer();
             // 5) Controlla SPAZIO
             if (glfwGetKey(window, GLFW_KEY_P) == GLFW_PRESS)
             {
+                txt.removeText(2);
                 gameState = PLAYING;
             }
         }
@@ -1290,11 +1292,6 @@ protected:
                 bool keysPressed = false;
                 const dReal* q = dBodyGetQuaternion(odeAirplaneBody);
                 glm::quat Q{ static_cast<float>(q[0]), static_cast<float>(q[1]), static_cast<float>(q[2]), static_cast<float>(q[3]) };
-
-                glm::vec3 worldUp     = Q * glm::vec3(0, 1, 0);   // current up
-                glm::vec3 desiredUp   = glm::vec3(0, 1, 0);       // world up
-
-                glm::vec3 worldForward = Q * glm::vec3(-1, 0, 0); // current forward
 
                 if (isAirplaneOnGround)
                 {
@@ -1419,11 +1416,26 @@ protected:
                 if (!keysPressed) {
                     // roll stabilizer (world torque)
                     std::cout << "Roll stabilizer\n";
-                    glm::vec3 axis = glm::cross(worldUp, desiredUp);
-                    float angle = glm::acos(glm::clamp(glm::dot(worldUp, desiredUp), -1.0f, 1.0f));
-                    glm::vec3 torque = angle * axis * 2000.0f; // tune constant
-                    dBodyAddTorque(odeAirplaneBody, torque.x, torque.y, torque.z);
+                    // Stabilizzatore di solo rollio
+                    const dReal* q = dBodyGetQuaternion(odeAirplaneBody);
+                    glm::quat currentOrientation(q[0], q[1], q[2], q[3]);
 
+                    // Calcola il vettore "destra" dell'aereo nello spazio del mondo
+                    glm::vec3 worldRight = currentOrientation * glm::vec3(0, 0, 1); // Assumendo +Z come destra nel modello
+
+                    // Proietta il vettore "destra" sul piano orizzontale del mondo (XZ)
+                    glm::vec3 projectedRight = glm::normalize(glm::vec3(worldRight.x, 0.0f, worldRight.z));
+
+                    // Calcola l'angolo di rollio (inclinazione)
+                    // L'asse Y del vettore "destra" del mondo indica l'inclinazione
+                    float rollAngle = -worldRight.y; // Usa il negativo a seconda della convenzione
+
+                    // Calcola la coppia di correzione attorno all'asse avanti dell'aereo
+                    glm::vec3 worldForward = currentOrientation * glm::vec3(-1, 0, 0); // Assumendo -X come avanti
+                    glm::vec3 rollTorque = worldForward * rollAngle * 4000.0f; // Aumenta la costante per una correzione più forte
+
+                    // Applica la coppia per stabilizzare il rollio
+                    dBodyAddTorque(odeAirplaneBody, rollTorque.x, rollTorque.y, rollTorque.z);
                     // pitch stabilizer (body torque)
                     float pitchError = worldForward.z;
                     glm::vec3 pitchTorque = glm::vec3(0, 0, 1) * -pitchError * 5000.0f;
@@ -1533,7 +1545,7 @@ protected:
             }
         }
 
-        glm::mat4 projectionMatrix = glm::perspective(currentFov, Ar, 0.1f, 300.f);
+        glm::mat4 projectionMatrix = glm::perspective(currentFov, Ar, 1.f, 500.f);
         projectionMatrix[1][1] *= -1;
 
         ViewPrj = projectionMatrix * viewMatrix;
