@@ -95,7 +95,7 @@
 			{"id": "ap",  "model": "ap",   "texture": ["ap", "pnois"],
 				"eulerAngles": [-90, 0, 0],
 				"scale": [0.25, 0.25, 0.25],
-				"translate": [-10, 0, 0]
+				"translate": [-10, 0.5, 0]
 			}
 		]},
 		{"technique": "CookTorranceGem", "elements": [

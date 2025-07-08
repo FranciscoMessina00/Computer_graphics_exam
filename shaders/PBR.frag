@@ -19,6 +19,7 @@ layout(binding = 0, set = 0) uniform GlobalUniformBufferObject {
     vec4 lightColor;
     vec3 eyePos;
     vec3 airplanePos;
+    float height; // height of the ground at this fragment
 } gubo;
 
 const float PI = 3.14159265359;
@@ -62,10 +63,30 @@ float GeometrySmith(vec3 N, vec3 V, vec3 L, float roughness) {
     GeometrySchlickGGX(max(dot(N, L), 0.0001f), roughness);
 }
 
+// ------------------------------------------------------------
+// a tiny 2D hash:  maps integer 2D coords -> [0,1)
+float hash12(vec2 p) {
+    // a classic “sin dot” trick
+    return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
+}
+
+// rotate a 2D vector around (0,0) by angle θ:
+vec2 rotate2D(vec2 v, float theta) {
+    float c = cos(theta), s = sin(theta);
+    return vec2(c*v.x - s*v.y,
+    s*v.x + c*v.y);
+}
+
 void main() {
     // -------------- simple shadow
-    vec3 planeProjected = gubo.airplanePos - gubo.lightDir * gubo.airplanePos.y / gubo.lightDir.y;
-    vec2 shadowCenter = planeProjected.xz;
+    // how high above the ground am I?
+    float hAbove = gubo.airplanePos.y - gubo.height;
+
+    // project that point onto the ground plane, along the light‑direction:
+    //   P + t·L  such that y == groundY
+    float t = hAbove / gubo.lightDir.y;
+    vec3 planeProjected = gubo.airplanePos - gubo.lightDir * t;
+    vec2 shadowCenter   = planeProjected.xz;
 
     vec2 fragXZ = fragPos.xz;
 
@@ -77,10 +98,9 @@ void main() {
     //float dist = length(fragXZ - shadowCenter);
 
     // Adjust shadow size based on airplane height
-    float shadowRadius = clamp(shadowSize - gubo.airplanePos.y * 0.05, 0.0, shadowSize);
+    float shadowRadius = clamp(shadowSize - hAbove * 0.05, 0.0, shadowSize);
 
-    float height = gubo.airplanePos.y;
-    float shadowStrength = mix(maxShadowStrength, minShadowStrength, clamp(height / 50.0, 0.0, 1.0));
+    float shadowStrength = mix(maxShadowStrength, minShadowStrength, clamp(hAbove / 50.0, 0.0, 1.0));
 
     // soft circular shadow (dark center, smooth edges)
     float shadow = 1.0 - smoothstep(shadowRadius * 0.4, shadowRadius, dist);
@@ -90,7 +110,24 @@ void main() {
     const float TILE_SIZE = 10.0;
     vec2 worldUV = fragUV_world / TILE_SIZE;
     vec2 offset  = gubo.airplanePos.xz / TILE_SIZE;
-    worldUV += offset;
+
+    vec2 tileID = floor(worldUV + offset);
+    vec2 tiledUV = fract(worldUV + offset);
+
+    // --- generate per‐tile randomness ---
+    float rndRot = hash12(tileID);          // [0,1)
+    float angle  = rndRot * 2.0 * PI;        // full 0→2π
+    float rndOff = (hash12(tileID + 0.5) - 0.5) * 0.3;
+    //   second hash for an offset in [-0.15, +0.15]
+
+    // --- apply them around the tile‐center (0.5,0.5) ---
+    vec2 uv = tiledUV - 0.5;
+    uv = rotate2D(uv, angle);
+    uv += 0.5 + vec2(rndOff);
+    // uv = tiledUV;
+    // worldUV += offset;
+    worldUV = uv;
+    // --------------
 
     vec3 albedo     = texture(albedoMap, worldUV).rgb;
     float occlusion  = texture(occlusionMap, worldUV).r;

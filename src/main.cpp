@@ -19,6 +19,10 @@
 
 #include <ode/ode.h>
 
+#include <fstream>
+#include <vector>
+#include <cstdint>
+
 // The uniform buffer object used in this example
 struct VertexChar
 {
@@ -62,6 +66,7 @@ struct GlobalUniformBufferGround
     alignas(16) glm::vec4 lightColor;
     alignas(16) glm::vec3 eyePos;
     alignas(16) glm::vec3 eyePosNoSmooth;
+    alignas(16) float groundHeight;
 };
 
 struct UniformBufferObjectChar
@@ -151,6 +156,7 @@ protected:
 
     std::vector<glm::mat4> gemWorlds; // world transforms for each spawned gem
     std::vector<bool> gemsCatched = {false, false, false, false, false, false, false, false, false, false};
+    int gemsCollected = 0;
     float gemScale = 0.20f; // scale of the gem model
     float catchRadius = 2.5f;
     float timer = 0.f;
@@ -199,13 +205,46 @@ protected:
     float dragCoefficient = 1.0f;
     glm::vec3 currentShakeOffset = glm::vec3(0.0f);
 
-    dWorldID odeWorld;
-    dSpaceID odeSpace;
-    dBodyID odeAirplaneBody;
-    dGeomID odeAirplaneGeom;
-    dMass odeAirplaneMass;
-    dGeomID odeGroundPlane;
-    dJointGroupID contactgroup;
+    dWorldID odeWorld = nullptr;
+    dSpaceID odeSpace = nullptr;
+    dBodyID odeAirplaneBody = nullptr;
+    dGeomID odeAirplaneGeom = nullptr;
+    dMass odeAirplaneMass = {};
+    // dGeomID odeGroundPlane = nullptr;
+    dJointGroupID contactgroup = nullptr;
+    std::vector<dReal> triVertices = {};
+    std::vector<uint32_t> triIndices = {};
+    dTriMeshDataID meshData = nullptr;
+
+    const int HF_ROWS = 256;
+    const int HF_COLS = 256;
+    const float CELL_SIZE = 0.1f;           // world‑space spacing between samples
+    const float NOISE_SCALE = 0.004f;       // noise frequency
+    const float HEIGHT_SCALE = 0.05f;       // noise amplitude
+    std::vector<float> heightSamples; // height samples for the heightfield
+
+    // 1) create the data object & the geom once:
+    dHeightfieldDataID hfData = dGeomHeightfieldDataCreate();
+    dGeomID            groundHF = nullptr;
+    void rebuildHeightSamples(float worldX, float worldZ, float scale){
+        // center the grid on the airplane
+        float startX = worldX - HF_COLS/2 * CELL_SIZE;
+        float startZ = worldZ - HF_ROWS/2 * CELL_SIZE;
+
+        for(int rz = 0; rz < HF_ROWS; ++rz){
+            for(int cx = 0; cx < HF_COLS; ++cx){
+                float wx = startX + cx * CELL_SIZE;
+                float wz = startZ + rz * CELL_SIZE;
+                float h  = noiseGround.GetNoise(wx * NOISE_SCALE,
+                                                wz * NOISE_SCALE)
+                           * HEIGHT_SCALE;
+                heightSamples[rz*HF_COLS + cx] = h * scale;
+                // std::cout << "Sample at (" << wx << ", " << wz << ") = " << h << "\n";
+            }
+        }
+        groundY = heightSamples[HF_ROWS/2 * HF_COLS + HF_COLS/2];
+        // std::cout << "Sample at airplane position: " << heightSamples[HF_ROWS/2 * HF_COLS + HF_COLS/2] << "\n";
+    };
 
     ALCdevice* device = nullptr;
     ALCcontext* context = nullptr;
@@ -217,7 +256,7 @@ protected:
     int groundTechIdx = -1;
     int groundInstIdx = -1;
     // fix the ground’s Y (height) to whatever you want—say groundY = 0.0f:
-    const float groundY = 0.1f;
+    float groundY = 0.1f;
     glm::mat4 groundBaseWm = glm::mat4(1.f);
     Model* ground = nullptr;
 
@@ -252,6 +291,30 @@ protected:
 
         // updates the textual output
         txt.resizeScreen(w, h);
+    }
+
+    void updateGroundHeightfield(float scale)
+    {
+        // 1) refill the sample array around the current airplane XZ
+        rebuildHeightSamples( airplanePosition.x, airplanePosition.z, scale);
+
+        // 2) rebuild the heightfield data in place
+        dGeomHeightfieldDataBuildSingle(
+          hfData,
+          heightSamples.data(),
+          false,
+          HF_COLS * CELL_SIZE,
+          HF_ROWS * CELL_SIZE,
+          HF_COLS,
+          HF_ROWS,
+          1.0, 0.0, 1.0, false
+        );
+
+        // 3) reposition the geom so it stays centered under the airplane
+        dGeomSetPosition(groundHF,
+                         airplanePosition.x,
+                         0.0f,
+                         airplanePosition.z);
     }
 
     // Here you load and setup all your Vulkan Models and Texutures.
@@ -624,7 +687,31 @@ protected:
             odeSpace = dSimpleSpaceCreate(0);
             dWorldSetGravity(odeWorld, 0, -9.81, 0); // Imposta la gravità!
             contactgroup = dJointGroupCreate(0);
-            odeGroundPlane = dCreatePlane(odeSpace, 0, 1, 0, groundY);
+            // odeGroundPlane = dCreatePlane(odeSpace, 0, 1, 0, groundY);
+
+            // build the heightfield data once
+            heightSamples = std::vector<float>(HF_ROWS * HF_COLS);
+            rebuildHeightSamples( airplanePosition.x, airplanePosition.z, 100.f);
+            dGeomHeightfieldDataBuildSingle(
+              hfData,
+              heightSamples.data(),           // pointer to your float array
+              /*bCopyHeightData=*/false,      // keep our array alive, no internal copy
+              /*width=*/ HF_COLS * CELL_SIZE, // X‑extent in world units
+              /*depth=*/ HF_ROWS * CELL_SIZE, // Z‑extent in world units
+              /*widthSamples=*/  HF_COLS,
+              /*depthSamples=*/  HF_ROWS,
+              /*scale=*/ 1.0f,                // scale the raw height values
+              /*offset=*/ 0.0f,               // add this to every height
+              /*thickness=*/ 1.0f,            // thickness under the lowest sample
+              /*bWrap=*/ false                // do not tile
+            );
+
+            // now create the placeable geom in your collision space
+            groundHF = dCreateHeightfield(odeSpace, hfData, /*bPlaceable=*/true);
+            dGeomSetPosition(groundHF,
+                             airplanePosition.x,
+                             0.0f,
+                             airplanePosition.z);
             // Crea il corpo rigido per l'aereo
             odeAirplaneBody = dBodyCreate(odeWorld);
             dBodySetPosition(odeAirplaneBody, airplanePosition.x, airplanePosition.y, airplanePosition.z);
@@ -701,13 +788,12 @@ protected:
             std::cout << "ERROR: Ground mesh '2DplaneTan' not found in scene.\n";
             exit(0);
         }
-        else
-        {
+        else {
             std::cout << "Ground mesh '2DplaneTan' found with ID: " << groundMeshId << "\n";
-            ground = SC.M[groundMeshId];
+            ground = SC.M[ groundMeshId ];
             rawVB_original = ground->vertices;
             // right after you fill `ground->vertices` for the very first time:
-            size_t byteSize = ground->vertices.size(); // bytes of your interleaved array
+            size_t byteSize = ground->vertices.size();  // bytes of your interleaved array
             ground->initDynamicVertexBuffer(this /* your BaseProject ptr */, byteSize);
             ground->updateVertexBuffer();
         }
@@ -847,58 +933,93 @@ protected:
     // =================================================================================
     // Funzioni Helper Modulari
     // =================================================================================
-    void shift2Dplane()
-    {
+    void shift2Dplane() {
         counter++;
         ground->vertices = rawVB_original;
         std::vector<unsigned char>& rawVB = ground->vertices;
 
-        // 3) figure out your stride and the offset of POSITION in it:
-        size_t stride = ground->VD->Bindings[0].stride;
-        size_t posOffset = ground->VD->Position.offset; // byte‑offset in each vertex
+        size_t stride    = ground->VD->Bindings[0].stride;
+        size_t posOffset = ground->VD->Position.offset;  // byte‑offset in each vertex
 
-        // 1) compute that same world‐space offset
         glm::vec3 worldOffset = airplanePosition;
-        // std::cout << "Ground world pos: " << worldOffset.x << ", " << worldOffset.z << "\n";
         glm::vec3 scale;
         scale.x = glm::length(glm::vec3(groundBaseWm[0]));
         scale.y = glm::length(glm::vec3(groundBaseWm[1]));
         scale.z = glm::length(glm::vec3(groundBaseWm[2]));
 
-        // 2) walk vertices
-        for (size_t i = 0; i < rawVB.size(); i += stride)
-        {
+        const float NOISE_SCALE  = 0.004f;
+        const float HEIGHT_SCALE = 0.05f;
+
+        float lx = 0.f, lz = 0.f, wx = 0.f, wz = 0.f, h = 0.f;
+
+        // rebuild triVertices fresh each frame
+        // triVertices.clear();
+        // triVertices.reserve(rawVB.size() / stride * 3);
+
+        for (size_t i = 0; i < rawVB.size(); i += stride) {
             glm::vec3* p =
                 reinterpret_cast<glm::vec3*>(&rawVB[i + posOffset]);
 
             // local XZ:
-            float lx = p->x * scale.x, lz = p->z * scale.z;
+            lx = p->x * scale.x , lz = p->z * scale.z;
 
             // // world XZ = local + plane‐translation
             worldOffset.x = std::floor(worldOffset.x * 100.0f) / 100.0f;
             worldOffset.z = std::floor(worldOffset.z * 100.0f) / 100.0f;
 
-            float wx = lx + worldOffset.x;
-            float wz = lz + worldOffset.z;
+            wx = lx + worldOffset.x;
+            wz = lz + worldOffset.z;
 
-            // float wz = 0.f;
-            // now sample noise in world coordinates
-            const float NOISE_SCALE = 0.004f; // try 0.1…1.0
-            const float HEIGHT_SCALE = 0.05f; // how tall your hills are
-
-            float h = noiseGround.GetNoise(wx * NOISE_SCALE,
+            h = noiseGround.GetNoise(wx * NOISE_SCALE,
                                            wz * NOISE_SCALE)
-                * HEIGHT_SCALE;
-            if (i == 0 * stride)
-            {
-                // std::cout << "Ground local pos: " << lx << ", " << lz << "\n";
-                // std::cout << "Ground world pos: " << wx << ", " << wz << "\n";
-                std::cout << "Ground height: " << h << "\n";
-            }
+                    * HEIGHT_SCALE;
             p->y = h;
+
+            // append directly into your ODE buffer in the same order
+            // triVertices.push_back(lx);
+            // triVertices.push_back(0);
+            // triVertices.push_back(lz);
         }
-        // 3) reupload:
+
         ground->updateVertexBuffer();
+        updateGroundHeightfield(scale.y);
+
+        // 2) tell ODE to rebuild its internal tree for this mesh
+        // dGeomTriMeshDataBuildSimple(
+        //   meshData,
+        //   triVertices.data(),  triVertices.size()/3,
+        //   triIndices.data(),   triIndices.size()/3
+        // );
+
+        // 3) move the whole geom under the airplane:
+        // dGeomSetPosition(odeGroundPlane,
+        //                  airplanePosition.x,
+        //                  0,
+        //                  airplanePosition.z);
+
+        // size_t cpuVertCount = triVertices.size() / 3;
+        // size_t cpuTriCount  = triIndices.size()  / 3;
+        // std::cout << "[CPU] TriMesh has " << cpuVertCount
+        //           << " verts, " << cpuTriCount << " tris\n";
+        //
+        // // 3) sanity‐check some heights
+        // for(int i=0; i<4; ++i){
+        //     size_t byteIndex = (i * stride) % rawVB.size();      // byte offset in rawVB
+        //     size_t vertIndex = byteIndex / stride;               // which vertex number
+        //     auto p = reinterpret_cast<glm::vec3*>(&rawVB[byteIndex + posOffset]);
+        //     std::cout << "sample vert["<<byteIndex<<"] world=("
+        //       << (p->x+worldOffset.x) <<"," << (p->z+worldOffset.z)
+        //       <<") height="<<p->y<<"\n";
+        //
+        //     size_t toff = 3 * vertIndex;
+        //     glm::vec3 v{ triVertices[toff + 0],
+        //                  triVertices[toff + 1],
+        //                  triVertices[toff + 2] };
+        //     std::cout << "  vert["<<vertIndex<<"] at ("<<v.x+worldOffset.x<<","<<v.z+worldOffset.z
+        //               <<") height="<<v.y<<"\n";
+        // }
+
+        // exportTriMeshToOBJ("ground_debug.obj", triVertices, triIndices);
     }
 
     void handleMouseScroll(double yoffset)
@@ -919,7 +1040,7 @@ protected:
         // Ignora collisioni tra oggetti statici
         if (b1 && b2 && dBodyIsKinematic(b1) && dBodyIsKinematic(b2)) return;
 
-        const int MAX_CONTACTS = 4; // Massimo numero di punti di contatto
+        const int MAX_CONTACTS = 10; // Massimo numero di punti di contatto
         dContact contact[MAX_CONTACTS];
 
         int numc = dCollide(o1, o2, MAX_CONTACTS, &contact[0].geom, sizeof(dContact));
@@ -995,6 +1116,7 @@ protected:
                 M = glm::translate(glm::mat4(1.0f), {distX(rng), distY(rng), distZ(rng)}) * glm::scale(
                     glm::mat4(1.0f), glm::vec3(gemScale));
             }
+
             if (gameState == PLAYING)
             {
                 isTimerActive = true;
@@ -1065,6 +1187,7 @@ protected:
         guboground.lightColor = glm::vec4(1.0f);
         guboground.eyePos = cameraPos;
         guboground.eyePosNoSmooth = airplanePosition;
+        guboground.groundHeight = groundY; // Y component of the ground base world matrix
 
         UniformBufferObjectChar uboc{};
         uboc.debug1 = debug1;
@@ -1100,6 +1223,7 @@ protected:
             ubogpbr.mMat = SC.TI[PBR_TECH_INDEX].I[inst_idx].Wm;
             ubogpbr.mvpMat = ViewPrj * ubogpbr.mMat;
             ubogpbr.nMat = glm::inverse(glm::transpose(ubogpbr.mMat));
+            // glm::mat4 groundBaseWmYshift = glm::translate(groundBaseWm, glm::vec3(0.0f, groundY, 0.0f));
             ubogpbr.worldMat = groundBaseWm;
             SC.TI[PBR_TECH_INDEX].I[inst_idx].DS[0][0]->map(currentImage, &guboground, 0);
             SC.TI[PBR_TECH_INDEX].I[inst_idx].DS[0][1]->map(currentImage, &ubogpbr, 0);
@@ -1163,6 +1287,7 @@ protected:
 
     void updateUniformBuffer(uint32_t currentImage)
     {
+
         float deltaT;
         glm::vec3 m, r;
         bool fire;
@@ -1204,10 +1329,9 @@ protected:
         {
             const float ROTATION_SPEED = 0.4f; // Velocità di rotazione in radianti al secondo
             const float CAMERA_DISTANCE = 12.0f; // Distanza dall'aereo
-            const float CAMERA_HEIGHT = 3.0f; // Altezza
+            const float CAMERA_HEIGHT = 3.0f;   // Altezza
             menuCameraAngle += ROTATION_SPEED * deltaT;
-            if (menuCameraAngle > glm::two_pi<float>())
-            {
+            if (menuCameraAngle > glm::two_pi<float>()) {
                 menuCameraAngle -= glm::two_pi<float>();
             }
             glm::vec3 cameraOffset(
@@ -1225,17 +1349,21 @@ protected:
 
             ViewPrj = projectionMatrix * viewMatrix;
 
-            updateUniforms(currentImage, deltaT);
+            // updateUniforms(currentImage, deltaT);
 
-            // 4) Stampa il testo “Premi SPAZIO per iniziare”
-            txt.print(0.f, 0.f, "PREMI P PER INIZIARE", 2, "CO", true, false, true, TAL_CENTER, TRH_CENTER, TRV_TOP,
-                      {1, 1, 1, 1}, {0, 0, 0, 1}, {0, 0, 0, 0}, 2, 2);
+            // 4) Stampa il testo “Premi P per iniziare”
+            txt.print(0.f, 0.f, "PREMI P PER INIZIARE", 2, "CO", true, false, true, TAL_CENTER, TRH_CENTER, TRV_TOP, {1, 1, 1, 1}, {0, 0, 0, 1}, {0, 0, 0, 0}, 2, 2);
             txt.updateCommandBuffer();
-            // 5) Controlla SPAZIO
+            // 5) Controlla P
             if (glfwGetKey(window, GLFW_KEY_P) == GLFW_PRESS)
             {
                 txt.removeText(2);
                 gameState = PLAYING;
+
+                std::ostringstream oss;
+                oss << "Gems collected: " << std::fixed << std::setprecision(1) << 0 << "/" << gemWorlds.size();
+                txt.print(-1.0f, -1.0f, oss.str(), 3, "SS", false, false, true, TAL_LEFT, TRH_LEFT, TRV_TOP,
+                          {0.0f, 0.0f, 0.0f, 1.0f}, {1.f, 1.f, 1.f, 1.0f});
             }
         }
         else if (gameState == PLAYING)
@@ -1305,12 +1433,11 @@ protected:
                 }
             }
 
-
             if (airplaneInitialized)
             {
                 const dReal* velocity = dBodyGetLinearVel(odeAirplaneBody);
                 const dReal* pos = dBodyGetPosition(odeAirplaneBody);
-                glm::vec3 globalVel{velocity[0], velocity[1], velocity[2]};
+                glm::vec3 globalVel{ velocity[0], velocity[1], velocity[2] };
                 float magSpeed = glm::length(globalVel);
                 constexpr float maxSpeed = 20.0f; // m/s, tune to your liking
 
@@ -1319,8 +1446,8 @@ protected:
                 const float baseRollAccel = 100.f; // m/s^2, tune to your liking
 
                 float a_pitch = basePitchAccel * (magSpeed / maxSpeed);
-                float a_yaw = baseYawAccel * (magSpeed / maxSpeed);
-                float a_roll = baseRollAccel * (magSpeed / maxSpeed);
+                float a_yaw   = baseYawAccel   * (magSpeed / maxSpeed);
+                float a_roll  = baseRollAccel * (magSpeed / maxSpeed);
 
                 // assuming inertia tensor is diagonal in body frame
                 const float inertiaScale = 1.f; // tune to your liking
@@ -1328,8 +1455,7 @@ protected:
                 const dReal Iyy = odeAirplaneMass.I[5] * inertiaScale;
                 const dReal Izz = odeAirplaneMass.I[10] * inertiaScale;
 
-                if (magSpeed > 0.001f)
-                {
+                if (magSpeed > 0.001f) {
                     // compute drag magnitude
                     float dragMag = dragCoefficient * magSpeed * magSpeed;
 
@@ -1358,7 +1484,7 @@ protected:
                 //                   liftMag * localUp.z);
                 // }
 
-                isAirplaneOnGround = (pos[1] <= groundY + 0.2f);
+                isAirplaneOnGround = (pos[1] <= groundY + 0.1f);
                 bool keysPressed = false;
                 const dReal* q = dBodyGetQuaternion(odeAirplaneBody);
                 glm::quat Q{
@@ -1490,17 +1616,13 @@ protected:
                     }
                 }
 
-                if (!keysPressed)
-                {
-                    // roll stabilizer (world torque)
-                    std::cout << "Roll stabilizer\n";
+                if (!keysPressed) {
                     // Stabilizzatore di solo rollio
                     const dReal* q = dBodyGetQuaternion(odeAirplaneBody);
                     glm::quat currentOrientation(q[0], q[1], q[2], q[3]);
 
                     // Calcola il vettore "destra" dell'aereo nello spazio del mondo
-                    glm::vec3 worldRight = currentOrientation * glm::vec3(0, 0, 1);
-                    // Assumendo +Z come destra nel modello
+                    glm::vec3 worldRight = currentOrientation * glm::vec3(0, 0, 1); // Assumendo +Z come destra nel modello
 
                     // Proietta il vettore "destra" sul piano orizzontale del mondo (XZ)
                     glm::vec3 projectedRight = glm::normalize(glm::vec3(worldRight.x, 0.0f, worldRight.z));
@@ -1511,8 +1633,7 @@ protected:
 
                     // Calcola la coppia di correzione attorno all'asse avanti dell'aereo
                     glm::vec3 worldForward = currentOrientation * glm::vec3(-1, 0, 0); // Assumendo -X come avanti
-                    glm::vec3 rollTorque = worldForward * rollAngle * 4000.0f;
-                    // Aumenta la costante per una correzione più forte
+                    glm::vec3 rollTorque = worldForward * rollAngle * 4000.0f; // Aumenta la costante per una correzione più forte
 
                     // Applica la coppia per stabilizzare il rollio
                     dBodyAddTorque(odeAirplaneBody, rollTorque.x, rollTorque.y, rollTorque.z);
@@ -1522,17 +1643,13 @@ protected:
                     // dBodyAddRelTorque(odeAirplaneBody, pitchTorque.x, pitchTorque.y, pitchTorque.z);
                 }
 
-                if (isEngineOn && magSpeed > takeoffSpeed)
-                {
+                if (isEngineOn && magSpeed > takeoffSpeed) {
                     dWorldSetGravity(odeWorld, 0, 0.f, 0); // Imposta la gravità!
-                }
-                else
-                {
+                }else {
                     dWorldSetGravity(odeWorld, 0, -9.81, 0); // Imposta la gravità!
                 }
 
-                if (isEngineOn)
-                {
+                if (isEngineOn) {
                     const float thrustMagnitude = thrustCoefficient * speed; // tune this
                     dReal fx = thrustMagnitude;
                     dReal fy = 0;
@@ -1541,8 +1658,7 @@ protected:
                 }
 
 
-                if (magSpeed > maxSpeed)
-                {
+                if (magSpeed > maxSpeed) {
                     // glm::dvec3 v_clamped = v * (maxSpeed / speed);
                     // dBodySetLinearVel(odeAirplaneBody, v_clamped.x, v_clamped.y, v_clamped.z);
                     // Optionally clear applied forces so they don't instantly re-accelerate:
@@ -1700,22 +1816,22 @@ protected:
 
         updateUniforms(currentImage, deltaT);
 
-        alListener3f(AL_POSITION, cameraPos.x, cameraPos.y, cameraPos.z);
-        alListener3f(AL_VELOCITY, airplaneVelocity.x, airplaneVelocity.y, airplaneVelocity.z);
+        // alListener3f(AL_POSITION, cameraPos.x, cameraPos.y, cameraPos.z);
+        // alListener3f(AL_VELOCITY, airplaneVelocity.x, airplaneVelocity.y, airplaneVelocity.z);
 
-        glm::vec3 forward = glm::normalize(cameraLookAt - cameraPos);
-        glm::vec3 worldUp(0.0f, 1.0f, 0.0f);
-        glm::vec3 right = glm::normalize(glm::cross(forward, worldUp));
-        glm::vec3 up = glm::cross(right, forward);
-        float ori[6] = {
-            forward.x, forward.y, forward.z,
-            up.x, up.y, up.z
-        };
-        alListenerfv(AL_ORIENTATION, ori);
+        // glm::vec3 forward = glm::normalize(cameraLookAt - cameraPos);
+        // glm::vec3 worldUp(0.0f, 1.0f, 0.0f);
+        // glm::vec3 right = glm::normalize(glm::cross(forward, worldUp));
+        // glm::vec3 up = glm::cross(right, forward);
+        // float ori[6] = {
+        //     forward.x, forward.y, forward.z,
+        //     up.x, up.y, up.z
+        // };
+        // alListenerfv(AL_ORIENTATION, ori);
 
         glm::mat4 groundXzFollow = glm::translate(
             glm::mat4(1.0f),
-            glm::vec3(airplanePosition.x, groundY, airplanePosition.z)
+            glm::vec3(airplanePosition.x, 0, airplanePosition.z)
         );
 
         if (groundTechIdx >= 0 && groundInstIdx >= 0)
@@ -1740,6 +1856,11 @@ protected:
                 gemsCatched[i] = true;
                 gemWorlds[i] = glm::translate(glm::mat4(1.0f), gemPos)
                     * glm::scale(glm::mat4(1.0f), glm::vec3(0.0f));
+                gemsCollected++;
+                std::ostringstream oss;
+                oss << "Gems collected: " << std::fixed << std::setprecision(1) << gemsCollected << "/" << gemWorlds.size();
+                txt.print(-1.0f, -1.0f, oss.str(), 3, "SS", false, false, true, TAL_LEFT, TRH_LEFT, TRV_TOP,
+                          {0.0f, 0.0f, 0.0f, 1.0f}, {1.f, 1.f, 1.f, 1.0f});
             }
         }
         if (timer > 120.f && !timerDone)
@@ -1747,6 +1868,34 @@ protected:
             std::cout << "Time's up!" << std::endl;
             timerDone = true;
         }
+    }
+
+    void initGroundCollision()
+    {
+        size_t stride    = ground->VD->Bindings[0].stride;
+        size_t posOffset = ground->VD->Position.offset;  // byte‑offset in each vertex
+        // 1) build triVertices & triIndices from your rawVB_original / ground->indices:
+        triVertices.reserve(rawVB_original.size() / stride * 3);
+        triIndices   = ground->indices;                // copy once
+
+        for (size_t i = 0; i < rawVB_original.size(); i += stride) {
+            glm::vec3* p = reinterpret_cast<glm::vec3*>(&rawVB_original[i + posOffset]);
+            triVertices.push_back(p->x);
+            triVertices.push_back(0.0f);  // start flat
+            triVertices.push_back(p->z);
+        }
+
+        // 2) create and build the meshData
+        meshData = dGeomTriMeshDataCreate();
+        dGeomTriMeshDataBuildSimple(
+          meshData,
+          triVertices.data(),  triVertices.size()/3,
+          triIndices.data(),   triIndices.size()/3
+        );
+
+        // 3) make a single trimesh geom
+        // odeGroundPlane = dCreateTriMesh(odeSpace, meshData,
+                                        // nullptr, nullptr, nullptr);
     }
 
     void audioInit()
@@ -1769,29 +1918,25 @@ protected:
 
         // 3) Set up the listener (camera) defaults
         //    Position at origin, no velocity
-        alListener3f(AL_POSITION, 0.0f, 0.0f, 0.0f);
-        alListener3f(AL_VELOCITY, 0.0f, 0.0f, 0.0f);
+        // alListener3f(AL_POSITION, 0.0f, 0.0f, 0.0f);
+        // alListener3f(AL_VELOCITY, 0.0f, 0.0f, 0.0f);
 
         //    Orientation: facing down −Z, with +Y as up
-        float listenerOri[] = {
-            0.0f, 0.0f, -1.0f, // “forward” vector
-            0.0f, 1.0f, 0.0f // “up” vector
-        };
-        alListenerfv(AL_ORIENTATION, listenerOri);
+        // float listenerOri[] = {
+        //     0.0f, 0.0f, -1.0f, // “forward” vector
+        //     0.0f, 1.0f, 0.0f // “up” vector
+        // };
+        // alListenerfv(AL_ORIENTATION, listenerOri);
 
         alGenSources(1, &audio_source);
-        alSource3f(audio_source, AL_POSITION, 0, 0, 0);
-        alSource3f(audio_source, AL_VELOCITY, 0, 0, 0);
-        alDistanceModel(AL_INVERSE_DISTANCE_CLAMPED);
+        // alSource3f(audio_source, AL_POSITION, 0, 0, 0);
+        // alSource3f(audio_source, AL_VELOCITY, 0, 0, 0);
+        // alDistanceModel(AL_INVERSE_DISTANCE_CLAMPED);
 
-        loadWavToBuffer("assets/audios/audio_mono.wav");
+        loadWavToBuffer("assets/audios/audio.wav");
 
         alSourcei(audio_source, AL_BUFFER, audio_buffer);
         alSourcei(audio_source, AL_LOOPING, AL_TRUE);
-        alSourcef(audio_source, AL_REFERENCE_DISTANCE, 1.0f);
-        alSourcef(audio_source, AL_ROLLOFF_FACTOR, 1.0f);
-        alSourcef(audio_source, AL_MAX_DISTANCE, 500.0f);
-        alSourcei(audio_source, AL_SOURCE_RELATIVE, AL_FALSE);
         alSourcePlay(audio_source);
     }
 
@@ -1826,6 +1971,47 @@ protected:
                      (ALsizei)(totalSamples * sizeof(int16_t)),
                      wav.sampleRate);
         free(pcmData);
+    }
+
+    void exportTriMeshToOBJ(const std::string &path,
+                            const std::vector<dReal> &triVertices,
+                            const std::vector<uint32_t> &triIndices)
+    {
+        std::ofstream out(path);
+        if(!out) {
+            std::cerr << "Failed to open " << path << " for writing\n";
+            return;
+        }
+
+        glm::vec3 scale = {
+            glm::length(glm::vec3(groundBaseWm[0])),
+            glm::length(glm::vec3(groundBaseWm[1])),
+            glm::length(glm::vec3(groundBaseWm[2]))
+        };
+
+        // write all vertices
+        size_t vcount = triVertices.size()/3;
+        out << "# OBJ export of " << vcount << " verts, "
+            << (triIndices.size()/3) << " tris\n";
+        for(size_t i = 0; i < vcount; ++i) {
+            dReal x = triVertices[3*i+0];
+            dReal y = triVertices[3*i+1];
+            dReal z = triVertices[3*i+2];
+            out << "v " << x << " " << y << " " << z << "\n";
+        }
+        out << "\n";
+
+        // write all faces (OBJ uses 1‑based indices)
+        size_t tcount = triIndices.size()/3;
+        for(size_t t = 0; t < tcount; ++t) {
+            uint32_t i0 = triIndices[3*t+0] + 1;
+            uint32_t i1 = triIndices[3*t+1] + 1;
+            uint32_t i2 = triIndices[3*t+2] + 1;
+            out << "f " << i0 << " " << i1 << " " << i2 << "\n";
+        }
+
+        out.close();
+        std::cout << "Wrote OBJ mesh to " << path << "\n";
     }
 
 private:
