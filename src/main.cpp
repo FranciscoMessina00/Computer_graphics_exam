@@ -661,9 +661,9 @@ protected:
         std::random_device rd;
         rng = std::mt19937(rd());
         shakeDist = std::uniform_real_distribution<float>(-0.1f, 0.1f);
-        distX = std::uniform_real_distribution<float>(-40.0f, 40.0f);
-        distY = std::uniform_real_distribution<float>(0.0f, 40.0f);
-        distZ = std::uniform_real_distribution<float>(-40.0f, 40.0f);
+        distX = std::uniform_real_distribution<float>(-100.0f, 100.0f);
+        distY = std::uniform_real_distribution<float>(10.0f, 80.0f);
+        distZ = std::uniform_real_distribution<float>(-100.0f, 100.0f);
 
         noise.SetSeed(1337);
         noise.SetNoiseType(FastNoise::Perlin);
@@ -1594,7 +1594,7 @@ protected:
                     * glm::scale(glm::mat4(1.0f), glm::vec3(0.0f));
             }
         }
-        if (timer > 10.f && !timerDone)
+        if (timer > 120.f && !timerDone)
         {
             std::cout << "Time's up!" << std::endl;
             timerDone = true;

@@ -94,7 +94,7 @@ void main() {
 
     vec3 albedo     = texture(albedoMap, worldUV).rgb;
     float occlusion  = texture(occlusionMap, worldUV).r;
-    float roughness = texture(roughnessMap, worldUV).r;
+    float roughness = texture(roughnessMap, worldUV).r * 0.5f;
 
 
     vec3 N = normalize(fragNorm);
