@@ -23,16 +23,6 @@
 #include <vector>
 #include <cstdint>
 
-// The uniform buffer object used in this example
-struct VertexChar
-{
-    glm::vec3 pos;
-    glm::vec3 norm;
-    glm::vec2 UV;
-    glm::uvec4 jointIndices;
-    glm::vec4 weights;
-};
-
 struct VertexSimp
 {
     glm::vec3 pos;
@@ -69,14 +59,6 @@ struct GlobalUniformBufferGround
     alignas(16) float groundHeight;
 };
 
-struct UniformBufferObjectChar
-{
-    alignas(16) glm::vec4 debug1;
-    alignas(16) glm::mat4 mvpMat[65];
-    alignas(16) glm::mat4 mMat[65];
-    alignas(16) glm::mat4 nMat[65];
-};
-
 struct UniformBufferObjectSimp
 {
     alignas(16) glm::mat4 mvpMat;
@@ -111,18 +93,15 @@ protected:
     // Here you list all the Vulkan objects you need:
 
     // Descriptor Layouts [what will be passed to the shaders]
-    DescriptorSetLayout DSLlocalChar, DSLlocalSimp, DSLlocalGem, DSLlocalPBR, DSLglobal, DSLglobalGround, DSLskyBox,
-                        DSLground;
+    DescriptorSetLayout DSLlocalSimp, DSLlocalGem, DSLlocalPBR, DSLglobal, DSLglobalGround, DSLskyBox;
 
     // Vertex formants, Pipelines [Shader couples] and Render passes
-    VertexDescriptor VDchar;
     VertexDescriptor VDsimp;
     VertexDescriptor VDgem;
     VertexDescriptor VDskyBox;
     VertexDescriptor VDtan;
-    VertexDescriptor VDground;
     RenderPass RP;
-    Pipeline Pchar, PsimpObj, PskyBox, P_PBR, Pgem, Pground;
+    Pipeline PsimpObj, PskyBox, P_PBR, Pgem;
     //*DBG*/Pipeline PDebug;
 
     // Models, textures and Descriptors (values assigned to the uniforms)
@@ -132,12 +111,6 @@ protected:
     //*DBG*/Model MS;
     //*DBG*/DescriptorSet SSD;
 
-    // To support animation
-#define N_ANIMATIONS 5
-
-    AnimBlender AB;
-    Animations Anim[N_ANIMATIONS];
-    SkeletalAnimation SKA;
 
     // to provide textual feedback
     TextMaker txt;
@@ -151,8 +124,6 @@ protected:
     glm::vec3 cameraPos = {};
     glm::vec3 cameraLookAt = glm::vec3(0.0f);
     glm::vec3 targetCameraPos = {};
-
-    glm::vec4 debug1 = glm::vec4(0);
 
     std::vector<glm::mat4> gemWorlds; // world transforms for each spawned gem
     std::vector<bool> gemsCatched = {false, false, false, false, false, false, false, false, false, false};
@@ -260,11 +231,11 @@ protected:
     glm::mat4 groundBaseWm = glm::mat4(1.f);
     Model* ground = nullptr;
 
-    bool isTimerActive = false;
+    bool activateCountdownTimer = false;
     float timerCountdown = 3.0f;
 
-    bool isSecondTimerActive = false;
-    float secondTimerCountdown = 60.0f;
+    bool gameTimerActive = false;
+    float gameTime = 120.f;
 
 
     // Here you set the main application parameters
@@ -356,18 +327,6 @@ protected:
                                  }
                              });
 
-        DSLlocalChar.init(this, {
-                              // this array contains the binding:
-                              // first  element : the binding number
-                              // second element : the type of element (buffer or texture)
-                              // third  element : the pipeline stage where it will be used
-                              {
-                                  0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_VERTEX_BIT,
-                                  sizeof(UniformBufferObjectChar), 1
-                              },
-                              {1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 0, 1}
-                          });
-
         DSLlocalSimp.init(this, {
                               // this array contains the binding:
                               // first  element : the binding number
@@ -394,19 +353,6 @@ protected:
                              {2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 1, 1}
                          });
 
-        DSLground.init(this, {
-                           // this array contains the binding:
-                           // first  element : the binding number
-                           // second element : the type of element (buffer or texture)
-                           // third  element : the pipeline stage where it will be used
-                           {
-                               0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_VERTEX_BIT,
-                               sizeof(UniformBufferObjectGround), 1
-                           },
-                           {1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 0, 1},
-                           {2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 1, 1}
-                       });
-
         DSLskyBox.init(this, {
                            {
                                0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_VERTEX_BIT,
@@ -429,31 +375,6 @@ protected:
                              {3, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 2, 1},
                              {4, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 3, 1}
                          });
-
-        VDchar.init(this, {
-                        {0, sizeof(VertexChar), VK_VERTEX_INPUT_RATE_VERTEX}
-                    }, {
-                        {
-                            0, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(VertexChar, pos),
-                            sizeof(glm::vec3), POSITION
-                        },
-                        {
-                            0, 1, VK_FORMAT_R32G32B32_SFLOAT, offsetof(VertexChar, norm),
-                            sizeof(glm::vec3), NORMAL
-                        },
-                        {
-                            0, 2, VK_FORMAT_R32G32_SFLOAT, offsetof(VertexChar, UV),
-                            sizeof(glm::vec2), UV
-                        },
-                        {
-                            0, 3, VK_FORMAT_R32G32B32A32_UINT, offsetof(VertexChar, jointIndices),
-                            sizeof(glm::uvec4), JOINTINDEX
-                        },
-                        {
-                            0, 4, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(VertexChar, weights),
-                            sizeof(glm::vec4), JOINTWEIGHT
-                        }
-                    });
 
         VDsimp.init(this, {
                         {0, sizeof(VertexSimp), VK_VERTEX_INPUT_RATE_VERTEX}
@@ -489,23 +410,6 @@ protected:
                        }
                    });
 
-        VDground.init(this, {
-                          {0, sizeof(VertexSimp), VK_VERTEX_INPUT_RATE_VERTEX}
-                      }, {
-                          {
-                              0, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(VertexSimp, pos),
-                              sizeof(glm::vec3), POSITION
-                          },
-                          {
-                              0, 1, VK_FORMAT_R32G32B32_SFLOAT, offsetof(VertexSimp, norm),
-                              sizeof(glm::vec3), NORMAL
-                          },
-                          {
-                              0, 2, VK_FORMAT_R32G32_SFLOAT, offsetof(VertexSimp, UV),
-                              sizeof(glm::vec2), UV
-                          }
-                      });
-
         VDskyBox.init(this, {
                           {0, sizeof(skyBoxVertex), VK_VERTEX_INPUT_RATE_VERTEX}
                       }, {
@@ -536,13 +440,11 @@ protected:
                        }
                    });
 
-        VDRs.resize(6);
-        VDRs[0].init("VDchar", &VDchar);
-        VDRs[1].init("VDsimp", &VDsimp);
-        VDRs[2].init("VDskybox", &VDskyBox);
-        VDRs[3].init("VDtan", &VDtan);
-        VDRs[4].init("VDgem", &VDgem);
-        VDRs[5].init("VDground", &VDground);
+        VDRs.resize(4);
+        VDRs[0].init("VDsimp", &VDsimp);
+        VDRs[1].init("VDskybox", &VDskyBox);
+        VDRs[2].init("VDtan", &VDtan);
+        VDRs[3].init("VDgem", &VDgem);
 
         // initializes the render passes
         RP.init(this);
@@ -553,15 +455,12 @@ protected:
         // Pipelines [Shader couples]
         // The last array, is a vector of pointer to the layouts of the sets that will
         // be used in this pipeline. The first element will be set 0, and so on..
-        Pchar.init(this, &VDchar, "shaders/PosNormUvTanWeights.vert.spv", "shaders/CookTorranceForCharacter.frag.spv",
-                   {&DSLglobal, &DSLlocalChar});
+
 
         PsimpObj.init(this, &VDsimp, "shaders/SimplePosNormUV.vert.spv", "shaders/CookTorrance.frag.spv",
                       {&DSLglobal, &DSLlocalSimp});
         Pgem.init(this, &VDgem, "shaders/Gem.vert.spv", "shaders/CookTorranceGem.frag.spv",
                   {&DSLglobal, &DSLlocalGem});
-        Pground.init(this, &VDground, "shaders/GroundVertex.vert.spv", "shaders/CookTorranceGround.frag.spv",
-                     {&DSLglobalGround, &DSLground});
 
         PskyBox.init(this, &VDskyBox, "shaders/SkyBoxShader.vert.spv", "shaders/SkyBoxShader.frag.spv", {&DSLskyBox});
         PskyBox.setCompareOp(VK_COMPARE_OP_LESS_OR_EQUAL);
@@ -571,19 +470,9 @@ protected:
         P_PBR.init(this, &VDtan, "shaders/SimplePosNormUvTan.vert.spv", "shaders/PBR.frag.spv",
                    {&DSLglobalGround, &DSLlocalPBR});
 
-        PRs.resize(6);
-        PRs[0].init("CookTorranceChar", {
-                        {
-                            &Pchar, {
-                                //Pipeline and DSL for the first pass
-                                /*DSLglobal*/{},
-                                /*DSLlocalChar*/{
-                                    /*t0*/{true, 0, {}} // index 0 of the "texture" field in the json file
-                                }
-                            }
-                        }
-                    }, /*TotalNtextures*/1, &VDchar);
-        PRs[1].init("CookTorranceNoiseSimp", {
+        PRs.resize(4);
+
+        PRs[0].init("CookTorranceNoiseSimp", {
                         {
                             &PsimpObj, {
                                 //Pipeline and DSL for the first pass
@@ -595,7 +484,7 @@ protected:
                             }
                         }
                     }, /*TotalNtextures*/2, &VDsimp);
-        PRs[2].init("CookTorranceGem", {
+        PRs[1].init("CookTorranceGem", {
                         {
                             &PsimpObj, {
                                 //Pipeline and DSL for the first pass
@@ -607,7 +496,7 @@ protected:
                             }
                         }
                     }, /*TotalNtextures*/2, &VDgem);
-        PRs[3].init("SkyBox", {
+        PRs[2].init("SkyBox", {
                         {
                             &PskyBox, {
                                 //Pipeline and DSL for the first pass
@@ -617,19 +506,7 @@ protected:
                             }
                         }
                     }, /*TotalNtextures*/1, &VDskyBox);
-        PRs[4].init("GroundShader", {
-                        {
-                            &Pground, {
-                                //Pipeline and DSL for the first pass
-                                /*DSLglobal*/{},
-                                /*DSLlocalSimp*/{
-                                    /*t0*/{true, 0, {}}, // index 0 of the "texture" field in the json file
-                                    /*t1*/{true, 1, {}} // index 1 of the "texture" field in the json file
-                                }
-                            }
-                        }
-                    }, /*TotalNtextures*/2, &VDground);
-        PRs[5].init("PBR", {
+        PRs[3].init("PBR", {
                         {
                             &P_PBR, {
                                 //Pipeline and DSL for the first pass
@@ -734,16 +611,6 @@ protected:
             std::cout << "WARNING: Airplane 'ap' not found in scene.\n";
         }
 
-
-        // initializes animations
-        for (int ian = 0; ian < N_ANIMATIONS; ian++)
-        {
-            Anim[ian].init(*SC.As[ian]);
-        }
-        AB.init({{0, 32, 0.0f, 0}, {0, 16, 0.0f, 1}, {0, 263, 0.0f, 2}, {0, 83, 0.0f, 3}, {0, 16, 0.0f, 4}});
-        //AB.init({{0,31,0.0f}});
-        SKA.init(Anim, 5, "Armature|mixamo.com|Layer0", 0);
-
         // initializes the textual output
         txt.init(this, windowWidth, windowHeight);
 
@@ -777,7 +644,7 @@ protected:
             M =
                 glm::translate(glm::mat4(1.0f),
                                glm::vec3(distX(rng), distY(rng), distZ(rng)))
-                * glm::scale(glm::mat4(1.0f), glm::vec3(gemScale));
+                * glm::scale(glm::mat4(1.0f), glm::vec3(0.f));
         }
 
         audioInit();
@@ -837,12 +704,10 @@ protected:
         RP.create();
 
         // This creates a new pipeline (with the current surface), using its shaders for the provided render pass
-        Pchar.create(&RP);
         PsimpObj.create(&RP);
         PskyBox.create(&RP);
         P_PBR.create(&RP);
         Pgem.create(&RP);
-        Pground.create(&RP);
 
         SC.pipelinesAndDescriptorSetsInit();
         txt.pipelinesAndDescriptorSetsInit();
@@ -851,13 +716,11 @@ protected:
     // Here you destroy your pipelines and Descriptor Sets!
     void pipelinesAndDescriptorSetsCleanup()
     {
-        Pchar.cleanup();
         PsimpObj.cleanup();
         PskyBox.cleanup();
         P_PBR.cleanup();
         RP.cleanup();
         Pgem.cleanup();
-        Pground.cleanup();
 
         SC.pipelinesAndDescriptorSetsCleanup();
         txt.pipelinesAndDescriptorSetsCleanup();
@@ -878,30 +741,21 @@ protected:
 
         dCloseODE();
 
-        DSLlocalChar.cleanup();
         DSLlocalSimp.cleanup();
         DSLlocalPBR.cleanup();
         DSLskyBox.cleanup();
         DSLglobal.cleanup();
         DSLlocalGem.cleanup();
-        DSLground.cleanup();
 
-        Pchar.destroy();
         PsimpObj.destroy();
         PskyBox.destroy();
         P_PBR.destroy();
         Pgem.destroy();
-        Pground.destroy();
 
         RP.destroy();
 
         SC.localCleanup();
         txt.localCleanup();
-
-        for (int ian = 0; ian < N_ANIMATIONS; ian++)
-        {
-            Anim[ian].cleanup();
-        }
 
         audioCleanUp();
     }
@@ -1088,38 +942,13 @@ protected:
         {
             glfwSetWindowShouldClose(window, GL_TRUE);
         }
-        //if (handleDebouncedKeyPress(GLFW_KEY_1)) debug1.x = 1.0f - debug1.x;
         if (handleDebouncedKeyPress(GLFW_KEY_1)) currentCameraMode = FIRST_PERSON;
-        //if (handleDebouncedKeyPress(GLFW_KEY_2)) debug1.y = 1.0f - debug1.y;
         if (handleDebouncedKeyPress(GLFW_KEY_2)) currentCameraMode = THIRD_PERSON;
-        if (handleDebouncedKeyPress(GLFW_KEY_P))
-        {
-            debug1.z = (float)(((int)debug1.z + 1) % 65);
-            std::cout << "Showing bone index: " << debug1.z << "\n";
-        }
-        if (handleDebouncedKeyPress(GLFW_KEY_O))
-        {
-            debug1.z = (float)(((int)debug1.z + 64) % 65);
-            std::cout << "Showing bone index: " << debug1.z << "\n";
-        }
-        if (handleDebouncedKeyPress(GLFW_KEY_SPACE))
-        {
-            static int curAnim = 0;
-            curAnim = (curAnim + 1) % 5;
-            AB.Start(curAnim, 0.5);
-            std::cout << "Playing anim: " << curAnim << "\n";
-        }
         if (handleDebouncedKeyPress(GLFW_KEY_H))
         {
-            for (auto& M : gemWorlds)
-            {
-                M = glm::translate(glm::mat4(1.0f), {distX(rng), distY(rng), distZ(rng)}) * glm::scale(
-                    glm::mat4(1.0f), glm::vec3(gemScale));
-            }
-
             if (gameState == PLAYING)
             {
-                isTimerActive = true;
+                activateCountdownTimer = true;
                 timerCountdown = 3.0f;
             }
         }
@@ -1163,18 +992,13 @@ protected:
         {
             gemAngle -= glm::two_pi<float>();
         }
-
-        // Animazione del personaggio
-        const float ANIMATION_SPEED_FACTOR = 0.85f;
-        AB.Advance(deltaT * ANIMATION_SPEED_FACTOR);
     }
 
     // --- Aggiorna tutti gli Uniform Buffer per il frame corrente ---
     void updateUniforms(uint32_t currentImage, float deltaT)
     {
         shift2Dplane();
-        const int CHAR_TECH_INDEX = 0, SIMP_TECH_INDEX = 1, GEM_TECH_INDEX = 2, SKY_TECH_INDEX = 3, GROUND_TECH_INDEX =
-                      4, PBR_TECH_INDEX = 5;
+        const int SIMP_TECH_INDEX = 0, GEM_TECH_INDEX = 1, SKY_TECH_INDEX = 2, PBR_TECH_INDEX = 3;
 
         const glm::mat4 lightView = glm::rotate(glm::mat4(1), glm::radians(-30.0f), glm::vec3(0.0f, 1.0f, 0.0f)) *
             glm::rotate(glm::mat4(1), glm::radians(-45.0f), glm::vec3(1.0f, 0.0f, 0.0f));
@@ -1189,23 +1013,8 @@ protected:
         guboground.eyePosNoSmooth = airplanePosition;
         guboground.groundHeight = groundY; // Y component of the ground base world matrix
 
-        UniformBufferObjectChar uboc{};
-        uboc.debug1 = debug1;
-        SKA.Sample(AB);
-        std::vector<glm::mat4>* TMsp = SKA.getTransformMatrices();
         glm::mat4 AdaptMat = glm::scale(glm::mat4(1.0f), glm::vec3(0.01f)) * glm::rotate(
             glm::mat4(1.0f), glm::radians(90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
-        for (size_t i = 0; i < TMsp->size(); ++i)
-        {
-            uboc.mMat[i] = AdaptMat * (*TMsp)[i];
-            uboc.mvpMat[i] = ViewPrj * uboc.mMat[i];
-            uboc.nMat[i] = glm::inverse(glm::transpose(uboc.mMat[i]));
-        }
-        for (int inst_idx = 0; inst_idx < SC.TI[CHAR_TECH_INDEX].InstanceCount; ++inst_idx)
-        {
-            SC.TI[CHAR_TECH_INDEX].I[inst_idx].DS[0][0]->map(currentImage, &gubo, 0);
-            SC.TI[CHAR_TECH_INDEX].I[inst_idx].DS[0][1]->map(currentImage, &uboc, 0);
-        }
 
         UniformBufferObjectSimp ubos{};
         for (int inst_idx = 0; inst_idx < SC.TI[SIMP_TECH_INDEX].InstanceCount; ++inst_idx)
@@ -1250,16 +1059,6 @@ protected:
             SC.TI[SKY_TECH_INDEX].I[0].DS[0][0]->map(currentImage, &sbubo, 0);
         }
 
-        if (SC.TI[GROUND_TECH_INDEX].InstanceCount > 0)
-        {
-            UniformBufferObjectGround uboground{};
-            uboground.mMat = SC.TI[GROUND_TECH_INDEX].I[0].Wm;
-            uboground.mvpMat = ViewPrj * uboground.mMat;
-            uboground.nMat = glm::inverse(glm::transpose(uboground.mMat));
-            uboground.worldMat = groundBaseWm;
-            SC.TI[GROUND_TECH_INDEX].I[0].DS[0][0]->map(currentImage, &guboground, 0);
-            SC.TI[GROUND_TECH_INDEX].I[0].DS[0][1]->map(currentImage, &uboground, 0);
-        }
 
         // Aggiornamento HUD (precedentemente in una funzione separata)
         static float elapsedT = 0.0f;
@@ -1267,7 +1066,6 @@ protected:
 
         countedFrames++;
         elapsedT += deltaT;
-        timer += deltaT;
         if (elapsedT > 1.0f)
         {
             float fps = (float)countedFrames / elapsedT;
@@ -1383,7 +1181,7 @@ protected:
             float fovInterpSpeed = 5.0f;
             currentFov = glm::mix(currentFov, targetFov, fovInterpSpeed * deltaT);
 
-            if (isTimerActive)
+            if (activateCountdownTimer)
             {
                 timerCountdown -= deltaT;
 
@@ -1396,22 +1194,22 @@ protected:
                 }
                 else
                 {
-                    isTimerActive = false; // Resetta il timer una volta scaduto
+                    activateCountdownTimer = false; // Resetta il timer una volta scaduto
                     txt.removeText(4);
-                    isSecondTimerActive = true;
-                    secondTimerCountdown = 5.0f;
+                    gameTimerActive = true;
+                    initGems();
+                    // gameTime = 5.0f;
                 }
             }
 
-            if (isSecondTimerActive)
+            if (gameTimerActive)
             {
-                secondTimerCountdown -= deltaT;
-
-                if (secondTimerCountdown > 0.0f)
+                timer += deltaT;
+                if (timer < gameTime)
                 {
                     // Formatta il tempo in MM:SS
-                    int minutes = static_cast<int>(secondTimerCountdown) / 60;
-                    int seconds = static_cast<int>(secondTimerCountdown) % 60;
+                    int minutes = static_cast<int>(gameTime - timer) / 60;
+                    int seconds = static_cast<int>(gameTime - timer) % 60;
                     std::ostringstream oss;
                     oss << std::setw(2) << std::setfill('0') << minutes << ":"
                         << std::setw(2) << std::setfill('0') << seconds;
@@ -1422,7 +1220,7 @@ protected:
                 else
                 {
                     // Il secondo timer è scaduto
-                    isSecondTimerActive = false;
+                    gameTimerActive = false;
                     txt.removeText(5); // Rimuove il testo del secondo timer
                     gameState = GAME_OVER;
                     // Calcola l'offset corrente della telecamera rispetto all'aereo
@@ -1486,11 +1284,11 @@ protected:
 
                 isAirplaneOnGround = (pos[1] <= groundY + 0.1f);
                 bool keysPressed = false;
-                const dReal* q = dBodyGetQuaternion(odeAirplaneBody);
-                glm::quat Q{
-                    static_cast<float>(q[0]), static_cast<float>(q[1]), static_cast<float>(q[2]),
-                    static_cast<float>(q[3])
-                };
+                // const dReal* q = dBodyGetQuaternion(odeAirplaneBody);
+                // glm::quat Q{
+                //     static_cast<float>(q[0]), static_cast<float>(q[1]), static_cast<float>(q[2]),
+                //     static_cast<float>(q[3])
+                // };
 
                 if (isAirplaneOnGround)
                 {
@@ -1867,6 +1665,14 @@ protected:
         {
             std::cout << "Time's up!" << std::endl;
             timerDone = true;
+        }
+    }
+
+    void initGems() {
+        for (auto& M : gemWorlds)
+        {
+            M = glm::translate(glm::mat4(1.0f), {distX(rng), distY(rng), distZ(rng)}) * glm::scale(
+                glm::mat4(1.0f), glm::vec3(gemScale));
         }
     }
 

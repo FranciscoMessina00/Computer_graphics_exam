@@ -137,7 +137,7 @@ int Scene::init(BaseProject *_BP,  int _Npasses, std::vector<VertexDescriptorRef
 		ifs >> js;
 		ifs.close();
 		std::cout << "\nScene contains " << js.size() << " definitions sections\n\n";
-		
+
 		// ASSET FILES
 		nlohmann::json afs = js["assetfiles"];
 		AssetFileCount = afs.size();
