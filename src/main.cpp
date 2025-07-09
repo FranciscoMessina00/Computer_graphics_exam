@@ -128,6 +128,7 @@ protected:
     std::vector<glm::mat4> gemWorlds; // world transforms for each spawned gem
     std::vector<bool> gemsCatched = {false, false, false, false, false, false, false, false, false, false};
     int gemsCollected = 0;
+    int gemsToCollect = 1; // total number of gems to collect
     float gemScale = 0.20f; // scale of the gem model
     float catchRadius = 2.5f;
     float timer = 0.f;
@@ -137,6 +138,12 @@ protected:
     float gameOverCameraAngle = 0.0f;
 
     enum GameState { START_MENU, PLAYING, GAME_OVER };
+    enum TextID { FPS,
+                  GAME_OVER_TEXT,
+                  COLLECTED_GEMS_TEXT,
+                  TIMER_TEXT,
+                  COUNTDOWN_TEXT,
+                  INSTRUCTIONS_TEXT };
 
     GameState gameState = START_MENU;
 
@@ -160,12 +167,15 @@ protected:
     // Indici per l'aereo
     int airplaneTechIdx = -1;
     int airplaneInstIdx = -1;
+    int airplaneRotor = -1;
 
     // Variabili per il controllo dell'aereo
     glm::vec3 airplanePosition = {};
     glm::vec3 airplaneVelocity = {};
     glm::quat airplaneOrientation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
-    const glm::quat airplaneModelCorrection = glm::angleAxis(glm::radians(-90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
+    const glm::quat airplaneModelCorrection = glm::angleAxis(glm::radians(180.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+    // const glm::mat4 rotorModelCorrection = glm::translate(glm::mat4(1.f), glm::vec3(-2.4644f * 0.25, 3.9877f * 0.25, 0.f)) * glm::rotate(glm::mat4(1.f), glm::radians(22.68f), glm::vec3(0.0f, 0.0f, -1.0f)) * glm::scale(glm::mat4(1.f), glm::vec3(0.25f));
+    const glm::mat4 rotorModelCorrection = glm::rotate(glm::mat4(1.f), glm::radians(22.68f), glm::vec3(0.0f, 0.0f, 1.0f)) * glm::rotate(glm::mat4(1.f), glm::radians(180.f), glm::vec3(0.0f, 1.0f, 0.0f)) * glm::scale(glm::mat4(1.f), glm::vec3(0.25f));
     glm::vec3 airplaneScale = glm::vec3(1.0f);
     bool airplaneInitialized = false;
     bool isEngineOn = false;
@@ -545,6 +555,7 @@ protected:
                 {
                     airplaneTechIdx = i;
                     airplaneInstIdx = j;
+                    airplaneRotor = j + 1;
                     break;
                 }
             }
@@ -618,7 +629,7 @@ protected:
         submitCommandBuffer("main", 0, populateCommandBufferAccess, this);
 
         // Prepares for showing the FPS count
-        txt.print(1.0f, 1.0f, "FPS:", 1, "CO", false, false, true, TAL_RIGHT, TRH_RIGHT, TRV_BOTTOM,
+        txt.print(1.0f, 1.0f, "FPS:", FPS, "CO", false, false, true, TAL_RIGHT, TRH_RIGHT, TRV_BOTTOM,
                   {1.0f, 0.0f, 0.0f, 1.0f}, {0.8f, 0.8f, 0.0f, 1.0f});
 
         // Adding randomisation of gems
@@ -788,92 +799,56 @@ protected:
     // Funzioni Helper Modulari
     // =================================================================================
     void shift2Dplane() {
-        counter++;
-        ground->vertices = rawVB_original;
-        std::vector<unsigned char>& rawVB = ground->vertices;
+        if (gameState != GAME_OVER) {
+            ground->vertices = rawVB_original;
+            std::vector<unsigned char>& rawVB = ground->vertices;
 
-        size_t stride    = ground->VD->Bindings[0].stride;
-        size_t posOffset = ground->VD->Position.offset;  // byte‑offset in each vertex
+            size_t stride    = ground->VD->Bindings[0].stride;
+            size_t posOffset = ground->VD->Position.offset;  // byte‑offset in each vertex
 
-        glm::vec3 worldOffset = airplanePosition;
-        glm::vec3 scale;
-        scale.x = glm::length(glm::vec3(groundBaseWm[0]));
-        scale.y = glm::length(glm::vec3(groundBaseWm[1]));
-        scale.z = glm::length(glm::vec3(groundBaseWm[2]));
+            glm::vec3 worldOffset = airplanePosition;
+            glm::vec3 scale;
+            scale.x = glm::length(glm::vec3(groundBaseWm[0]));
+            scale.y = glm::length(glm::vec3(groundBaseWm[1]));
+            scale.z = glm::length(glm::vec3(groundBaseWm[2]));
 
-        const float NOISE_SCALE  = 0.004f;
-        const float HEIGHT_SCALE = 0.05f;
+            const float NOISE_SCALE  = 0.004f;
+            const float HEIGHT_SCALE = 0.05f;
 
-        float lx = 0.f, lz = 0.f, wx = 0.f, wz = 0.f, h = 0.f;
+            float lx = 0.f, lz = 0.f, wx = 0.f, wz = 0.f, h = 0.f;
 
-        // rebuild triVertices fresh each frame
-        // triVertices.clear();
-        // triVertices.reserve(rawVB.size() / stride * 3);
+            // rebuild triVertices fresh each frame
+            // triVertices.clear();
+            // triVertices.reserve(rawVB.size() / stride * 3);
 
-        for (size_t i = 0; i < rawVB.size(); i += stride) {
-            glm::vec3* p =
-                reinterpret_cast<glm::vec3*>(&rawVB[i + posOffset]);
+            for (size_t i = 0; i < rawVB.size(); i += stride) {
+                glm::vec3* p =
+                    reinterpret_cast<glm::vec3*>(&rawVB[i + posOffset]);
 
-            // local XZ:
-            lx = p->x * scale.x , lz = p->z * scale.z;
+                // local XZ:
+                lx = p->x * scale.x , lz = p->z * scale.z;
 
-            // // world XZ = local + plane‐translation
-            worldOffset.x = std::floor(worldOffset.x * 100.0f) / 100.0f;
-            worldOffset.z = std::floor(worldOffset.z * 100.0f) / 100.0f;
+                // // world XZ = local + plane‐translation
+                worldOffset.x = std::floor(worldOffset.x * 100.0f) / 100.0f;
+                worldOffset.z = std::floor(worldOffset.z * 100.0f) / 100.0f;
 
-            wx = lx + worldOffset.x;
-            wz = lz + worldOffset.z;
+                wx = lx + worldOffset.x;
+                wz = lz + worldOffset.z;
 
-            h = noiseGround.GetNoise(wx * NOISE_SCALE,
-                                           wz * NOISE_SCALE)
-                    * HEIGHT_SCALE;
-            p->y = h;
+                h = noiseGround.GetNoise(wx * NOISE_SCALE,
+                                               wz * NOISE_SCALE)
+                        * HEIGHT_SCALE;
+                p->y = h;
 
-            // append directly into your ODE buffer in the same order
-            // triVertices.push_back(lx);
-            // triVertices.push_back(0);
-            // triVertices.push_back(lz);
+                // append directly into your ODE buffer in the same order
+                // triVertices.push_back(lx);
+                // triVertices.push_back(0);
+                // triVertices.push_back(lz);
+            }
+
+            ground->updateVertexBuffer();
         }
-
-        ground->updateVertexBuffer();
-        updateGroundHeightfield(scale.y);
-
-        // 2) tell ODE to rebuild its internal tree for this mesh
-        // dGeomTriMeshDataBuildSimple(
-        //   meshData,
-        //   triVertices.data(),  triVertices.size()/3,
-        //   triIndices.data(),   triIndices.size()/3
-        // );
-
-        // 3) move the whole geom under the airplane:
-        // dGeomSetPosition(odeGroundPlane,
-        //                  airplanePosition.x,
-        //                  0,
-        //                  airplanePosition.z);
-
-        // size_t cpuVertCount = triVertices.size() / 3;
-        // size_t cpuTriCount  = triIndices.size()  / 3;
-        // std::cout << "[CPU] TriMesh has " << cpuVertCount
-        //           << " verts, " << cpuTriCount << " tris\n";
-        //
-        // // 3) sanity‐check some heights
-        // for(int i=0; i<4; ++i){
-        //     size_t byteIndex = (i * stride) % rawVB.size();      // byte offset in rawVB
-        //     size_t vertIndex = byteIndex / stride;               // which vertex number
-        //     auto p = reinterpret_cast<glm::vec3*>(&rawVB[byteIndex + posOffset]);
-        //     std::cout << "sample vert["<<byteIndex<<"] world=("
-        //       << (p->x+worldOffset.x) <<"," << (p->z+worldOffset.z)
-        //       <<") height="<<p->y<<"\n";
-        //
-        //     size_t toff = 3 * vertIndex;
-        //     glm::vec3 v{ triVertices[toff + 0],
-        //                  triVertices[toff + 1],
-        //                  triVertices[toff + 2] };
-        //     std::cout << "  vert["<<vertIndex<<"] at ("<<v.x+worldOffset.x<<","<<v.z+worldOffset.z
-        //               <<") height="<<v.y<<"\n";
-        // }
-
-        // exportTriMeshToOBJ("ground_debug.obj", triVertices, triIndices);
+        updateGroundHeightfield(glm::length(glm::vec3(groundBaseWm[1])));
     }
 
     void handleMouseScroll(double yoffset)
@@ -1010,11 +985,8 @@ protected:
         guboground.lightDir = glm::vec3(lightView * glm::vec4(0.0f, 0.0f, 1.0f, 1.0f));
         guboground.lightColor = glm::vec4(1.0f);
         guboground.eyePos = cameraPos;
-        guboground.eyePosNoSmooth = airplanePosition;
+        guboground.eyePosNoSmooth = gameState != GAME_OVER ? airplanePosition : cameraPos;
         guboground.groundHeight = groundY; // Y component of the ground base world matrix
-
-        glm::mat4 AdaptMat = glm::scale(glm::mat4(1.0f), glm::vec3(0.01f)) * glm::rotate(
-            glm::mat4(1.0f), glm::radians(90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
 
         UniformBufferObjectSimp ubos{};
         for (int inst_idx = 0; inst_idx < SC.TI[SIMP_TECH_INDEX].InstanceCount; ++inst_idx)
@@ -1071,7 +1043,7 @@ protected:
             float fps = (float)countedFrames / elapsedT;
             std::ostringstream oss;
             oss << "FPS: " << std::fixed << std::setprecision(1) << fps;
-            txt.print(1.0f, 1.0f, oss.str(), 1, "CO", false, false, true, TAL_RIGHT, TRH_RIGHT, TRV_BOTTOM,
+            txt.print(1.0f, 1.0f, oss.str(), FPS, "CO", false, false, true, TAL_RIGHT, TRH_RIGHT, TRV_BOTTOM,
                       {1.0f, 0.0f, 0.0f, 1.0f}, {0.8f, 0.8f, 0.0f, 1.0f});
             elapsedT = 0.0f;
             countedFrames = 0;
@@ -1113,7 +1085,7 @@ protected:
             rotationPart[0] /= airplaneScale.x;
             rotationPart[1] /= airplaneScale.y;
             rotationPart[2] /= airplaneScale.z;
-            airplaneOrientation = glm::normalize(glm::quat_cast(rotationPart));
+            airplaneOrientation = glm::normalize(glm::quat_cast(rotationPart) * airplaneModelCorrection);
             airplaneInitialized = true;
 
             dBodySetLinearDamping(odeAirplaneBody, 0.005f); // adjust between 0.1–10.0
@@ -1140,8 +1112,8 @@ protected:
             cameraPos = airplanePosition + cameraOffset;
 
             cameraLookAt = airplanePosition;
-            ViewPrj = glm::perspective(currentFov, Ar, 0.1f, 100.0f);
-            glm::mat4 projectionMatrix = glm::perspective(currentFov, Ar, 0.1f, 300.f);
+            ViewPrj = glm::perspective(currentFov, Ar, 1.f, 500.0f);
+            glm::mat4 projectionMatrix = glm::perspective(currentFov, Ar, 1.f, 500.f);
             projectionMatrix[1][1] *= -1;
             viewMatrix = glm::lookAt(cameraPos, cameraLookAt, glm::vec3(0.0f, 1.0f, 0.0f));
 
@@ -1150,18 +1122,13 @@ protected:
             // updateUniforms(currentImage, deltaT);
 
             // 4) Stampa il testo “Premi P per iniziare”
-            txt.print(0.f, 0.f, "PREMI P PER INIZIARE", 2, "CO", true, false, true, TAL_CENTER, TRH_CENTER, TRV_TOP, {1, 1, 1, 1}, {0, 0, 0, 1}, {0, 0, 0, 0}, 2, 2);
+            txt.print(0.f, 0.f, "PREMI P PER INIZIARE", INSTRUCTIONS_TEXT, "CO", true, false, true, TAL_CENTER, TRH_CENTER, TRV_MIDDLE, {1, 1, 1, 1}, {0, 0, 0, 1}, {0, 0, 0, 0}, 2, 2);
             txt.updateCommandBuffer();
             // 5) Controlla P
             if (glfwGetKey(window, GLFW_KEY_P) == GLFW_PRESS)
             {
-                txt.removeText(2);
+                txt.removeText(INSTRUCTIONS_TEXT);
                 gameState = PLAYING;
-
-                std::ostringstream oss;
-                oss << "Gems collected: " << std::fixed << std::setprecision(1) << 0 << "/" << gemWorlds.size();
-                txt.print(-1.0f, -1.0f, oss.str(), 3, "SS", false, false, true, TAL_LEFT, TRH_LEFT, TRV_TOP,
-                          {0.0f, 0.0f, 0.0f, 1.0f}, {1.f, 1.f, 1.f, 1.0f});
             }
         }
         else if (gameState == PLAYING)
@@ -1189,13 +1156,13 @@ protected:
                 {
                     std::ostringstream oss;
                     oss << std::fixed << std::setprecision(0) << timerCountdown;
-                    txt.print(0.f, -0.f, oss.str(), 4, "CO", true, false, true, TAL_CENTER, TRH_CENTER, TRV_TOP,
+                    txt.print(0.f, -0.f, oss.str(), COUNTDOWN_TEXT, "CO", true, false, true, TAL_CENTER, TRH_CENTER, TRV_MIDDLE,
                               {1, 1, 1, 1}, {0, 0, 0, 1}, {0, 0, 0, 0}, 2, 2);
                 }
                 else
                 {
                     activateCountdownTimer = false; // Resetta il timer una volta scaduto
-                    txt.removeText(4);
+                    txt.removeText(COUNTDOWN_TEXT);
                     gameTimerActive = true;
                     initGems();
                     // gameTime = 5.0f;
@@ -1205,7 +1172,7 @@ protected:
             if (gameTimerActive)
             {
                 timer += deltaT;
-                if (timer < gameTime)
+                if (timer < gameTime && gemsCollected < gemsToCollect)
                 {
                     // Formatta il tempo in MM:SS
                     int minutes = static_cast<int>(gameTime - timer) / 60;
@@ -1215,13 +1182,14 @@ protected:
                         << std::setw(2) << std::setfill('0') << seconds;
 
                     // Visualizza il secondo timer (1 minuto) usando un ID diverso (es. 5)
-                    txt.print(0.5f, 0.5f, oss.str(), 5, "CO", true, false, true, TAL_CENTER, TRH_CENTER);
+                    txt.print(0.5f, 0.5f, oss.str(), TIMER_TEXT, "CO", true, false, true, TAL_CENTER, TRH_CENTER);
                 }
                 else
                 {
                     // Il secondo timer è scaduto
                     gameTimerActive = false;
-                    txt.removeText(5); // Rimuove il testo del secondo timer
+                    txt.removeText(TIMER_TEXT); // Rimuove il testo del timer
+                    txt.removeText(COLLECTED_GEMS_TEXT); // Rimuove il testo delle gemme
                     gameState = GAME_OVER;
                     // Calcola l'offset corrente della telecamera rispetto all'aereo
                     glm::vec3 cameraOffset = cameraPos - airplanePosition;
@@ -1474,13 +1442,14 @@ protected:
                 airplanePosition = glm::vec3(pos[0], pos[1], pos[2]);
                 airplaneOrientation = glm::quat(rot[0], rot[1], rot[2], rot[3]);
 
-                glm::quat finalOrientation = airplaneOrientation * glm::angleAxis(
-                    glm::radians(-90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
+                glm::quat finalOrientation = airplaneOrientation * airplaneModelCorrection;
 
                 SC.TI[airplaneTechIdx].I[airplaneInstIdx].Wm =
                     glm::translate(glm::mat4(1.0f), airplanePosition) *
                     glm::mat4_cast(finalOrientation) *
                     glm::scale(glm::mat4(1.0f), airplaneScale);
+                SC.TI[airplaneTechIdx].I[airplaneRotor].Wm = glm::translate(glm::mat4(1.0f), airplanePosition) * glm::mat4_cast(finalOrientation) * rotorModelCorrection;
+                    // glm::scale(glm::mat4(1.0f), airplaneScale);
 
                 // --- Logica della Telecamera ---
                 glm::vec3 cameraOffset;
@@ -1507,7 +1476,7 @@ protected:
                 else
                 {
                     // THIRD_PERSON (default)
-                    cameraOffset = glm::vec3(15.0f, 5.0f, 0.0f);
+                    cameraOffset = glm::vec3(15.0f, 1.5f, 0.0f);
                 }
 
                 targetCameraPos = airplanePosition + (airplaneOrientation * cameraOffset);
@@ -1542,6 +1511,7 @@ protected:
                 glm::vec3 cameraUp = glm::normalize(airplaneOrientation * glm::vec3(0.0f, 1.0f, 0.0f));
                 viewMatrix = glm::lookAt(finalCameraPos, cameraLookAt, cameraUp);
             }
+            GameLogic();
         }
         else if (gameState == GAME_OVER)
         {
@@ -1572,7 +1542,7 @@ protected:
 
 
                 // Aggiorna le matrici di vista e proiezione
-                glm::mat4 projectionMatrix = glm::perspective(currentFov, Ar, 0.1f, 300.f);
+                glm::mat4 projectionMatrix = glm::perspective(currentFov, Ar, 1.f, 500.f);
                 projectionMatrix[1][1] *= -1;
                 viewMatrix = glm::lookAt(cameraPos, cameraLookAt, glm::vec3(0.0f, 1.0f, 0.0f));
                 ViewPrj = projectionMatrix * viewMatrix;
@@ -1597,11 +1567,22 @@ protected:
                     glm::translate(glm::mat4(1.0f), airplanePosition) *
                     glm::mat4_cast(airplaneOrientation * airplaneModelCorrection) *
                     glm::scale(glm::mat4(1.0f), airplaneScale);
+                SC.TI[airplaneTechIdx].I[airplaneRotor].Wm = glm::translate(glm::mat4(1.0f), airplanePosition) * glm::mat4_cast(airplaneOrientation * airplaneModelCorrection) * rotorModelCorrection;
             }
 
             // Mostra il messaggio di fine gioco
-            txt.print(0.f, 0.f, "Fine del gioco! Premi esc per uscire", 6, "CO", true, false, true, TAL_CENTER,
-                      TRH_CENTER);
+            std::ostringstream oss;
+            if (gemsCollected == gemsToCollect) {
+                oss << "Hai raccolto tuttele gemme!";
+            }
+            else {
+                oss << "Hai raccolto solo " << gemsCollected << " gemme su " << gemsToCollect << ". Hai perso!";
+            }
+
+            oss << "\nFine del gioco! Premi esc per uscire";
+
+            txt.print(0.f, 0.f, oss.str(), GAME_OVER_TEXT, "SS", false, true, true, TAL_CENTER,
+                      TRH_CENTER, TRV_MIDDLE, {0, 0, 0, 1}, {0, 0, 0, 1}, {0, 0, 0, 0}, 1, 1);
 
             // Aggiorna gli uniformi e il command buffer alla fine
             updateUniforms(currentImage, deltaT);
@@ -1632,12 +1613,11 @@ protected:
             glm::vec3(airplanePosition.x, 0, airplanePosition.z)
         );
 
-        if (groundTechIdx >= 0 && groundInstIdx >= 0)
+        if (groundTechIdx >= 0 && groundInstIdx >= 0 && gameState != GAME_OVER)
         {
             SC.TI[groundTechIdx].I[groundInstIdx].Wm = groundXzFollow * groundBaseWm;
         }
 
-        GameLogic();
     }
 
 
@@ -1657,23 +1637,30 @@ protected:
                 gemsCollected++;
                 std::ostringstream oss;
                 oss << "Gems collected: " << std::fixed << std::setprecision(1) << gemsCollected << "/" << gemWorlds.size();
-                txt.print(-1.0f, -1.0f, oss.str(), 3, "SS", false, false, true, TAL_LEFT, TRH_LEFT, TRV_TOP,
+                txt.print(-1.0f, -1.0f, oss.str(), COLLECTED_GEMS_TEXT, "SS", false, false, true, TAL_LEFT, TRH_LEFT, TRV_TOP,
                           {0.0f, 0.0f, 0.0f, 1.0f}, {1.f, 1.f, 1.f, 1.0f});
             }
         }
-        if (timer > 120.f && !timerDone)
-        {
-            std::cout << "Time's up!" << std::endl;
-            timerDone = true;
-        }
+        // if ((timer > 120.f && !timerDone) || )
+        // {
+        //     std::cout << "Time's up!" << std::endl;
+        //     timerDone = true;
+        // }
     }
 
     void initGems() {
+        distX = std::uniform_real_distribution<float>(airplanePosition.x - 100.0f, airplanePosition.x + 100.0f);
+        distY = std::uniform_real_distribution<float>(10.0f, 80.0f);
+        distZ = std::uniform_real_distribution<float>(airplanePosition.z - 100.0f, airplanePosition.z + 100.0f);
         for (auto& M : gemWorlds)
         {
             M = glm::translate(glm::mat4(1.0f), {distX(rng), distY(rng), distZ(rng)}) * glm::scale(
                 glm::mat4(1.0f), glm::vec3(gemScale));
         }
+        std::ostringstream oss;
+        oss << "Gems collected: " << std::fixed << std::setprecision(1) << gemsCollected << "/" << gemWorlds.size();
+        txt.print(-1.0f, -1.0f, oss.str(), COLLECTED_GEMS_TEXT, "SS", false, false, true, TAL_LEFT, TRH_LEFT, TRV_TOP,
+                          {0.0f, 0.0f, 0.0f, 1.0f}, {1.f, 1.f, 1.f, 1.0f});
     }
 
     void initGroundCollision()
@@ -1743,7 +1730,7 @@ protected:
 
         alSourcei(audio_source, AL_BUFFER, audio_buffer);
         alSourcei(audio_source, AL_LOOPING, AL_TRUE);
-        alSourcePlay(audio_source);
+        // alSourcePlay(audio_source);
     }
 
     void audioCleanUp()
@@ -1789,11 +1776,6 @@ protected:
             return;
         }
 
-        glm::vec3 scale = {
-            glm::length(glm::vec3(groundBaseWm[0])),
-            glm::length(glm::vec3(groundBaseWm[1])),
-            glm::length(glm::vec3(groundBaseWm[2]))
-        };
 
         // write all vertices
         size_t vcount = triVertices.size()/3;

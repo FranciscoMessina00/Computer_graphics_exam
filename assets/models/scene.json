@@ -1,7 +1,8 @@
 {
 	"models": [
 		{"id": "skybox", "VD": "VDskybox", "model": "assets/models/SkyBoxCube.obj", "format":"OBJ"},
-		{"id": "ap", "VD": "VDsimp", "model": "assets/models/airplane.obj", "format": "OBJ"},
+		{"id": "ap", "VD": "VDsimp", "model": "assets/models/aeroplanino.obj", "format": "OBJ"},
+		{"id": "ap_rotor", "VD": "VDsimp", "model": "assets/models/aeroplanino_motore.obj", "format": "OBJ"},
 		{"id": "2Dplane", "VD": "VDsimp", "model": "assets/models/plane.obj", "format": "OBJ"},
 		{"id": "2DplaneTan", "VD": "VDtan", "model": "assets/models/2Dplane.gltf", "format": "GLTF"},
 		{"id": "gem", "VD": "VDsimp", "model": "assets/models/Gem01_Blue.mgcg", "format": "MGCG"}
@@ -10,6 +11,7 @@
 		{"id": "pnois", "texture": "assets/textures/Perlin_noise.png", "format": "C"},
 		{"id": "skybox", "texture": "assets/textures/daybox.png", "format": "C"},
 		{"id": "ap", "texture": "assets/textures/airplane.jpg", "format": "C"},
+
 		{"id": "gem", "texture": "assets/textures/Gem01_Blue_Albedo.png", "format": "C"},
 		{"id": "gemMetallic", "texture": "assets/textures/Gem01_Blue_MetallicSmoothness.png", "format": "D"},
 
@@ -22,7 +24,12 @@
 	"instances": [
 		{"technique": "CookTorranceNoiseSimp", "elements": [
 			{"id": "ap",  "model": "ap",   "texture": ["ap", "pnois"],
-				"eulerAngles": [-90, 0, 0],
+				"eulerAngles": [0, 180, 0],
+				"scale": [0.25, 0.25, 0.25],
+				"translate": [-10, 0.5, 0]
+			},
+			{"id": "ap_rotor",  "model": "ap_rotor",   "texture": ["ap", "pnois"],
+				"eulerAngles": [0, 0, 0],
 				"scale": [0.25, 0.25, 0.25],
 				"translate": [-10, 0.5, 0]
 			}

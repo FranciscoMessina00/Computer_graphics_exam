@@ -1,0 +1,22 @@
+# Blender 4.4.3 MTL File: 'aeroplanino.blend'
+# www.blender.org
+
+newmtl 01___Airplane
+Ns 0.000000
+Ka 1.000000 1.000000 1.000000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 1
+map_Kd Computer_graphics_exam/assets/textures/airplane.jpg
+
+newmtl 04___Rotor
+Ns 0.000000
+Ka 1.000000 1.000000 1.000000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 1
+map_Kd Computer_graphics_exam/assets/textures/airplane.jpg
