@@ -79,6 +79,61 @@ struct skyBoxUniformBufferObject
     alignas(16) glm::mat4 mvpMat;
 };
 
+struct TerrainHeightmap {
+    float minX, minZ;       // World-space origin of terrain grid
+    float cellW, cellD;     // Width and depth of each cell
+    int W, D;               // Grid resolution: number of samples along width and depth
+    std::vector<float> heights; // Flattened heightmap (row-major order)
+
+    // Initializes the heightmap
+    void init(int widthSamples, int depthSamples,
+              float cellWidth, float cellDepth,
+              float worldOriginX, float worldOriginZ,
+              std::function<float(float, float)> heightFunc)
+    {
+        W = widthSamples;
+        D = depthSamples;
+        cellW = cellWidth;
+        cellD = cellDepth;
+        minX = worldOriginX;
+        minZ = worldOriginZ;
+
+        heights.resize(W * D);
+        for (int z = 0; z < D; ++z) {
+            for (int x = 0; x < W; ++x) {
+                float worldX = minX + x * cellW;
+                float worldZ = minZ + z * cellD;
+                heights[z * W + x] = heightFunc(worldX, worldZ);
+            }
+        }
+    }
+
+    // Sample height at world-space coordinates (with bilinear interpolation)
+    float sampleHeight(float x, float z) const {
+        float fx = (x - minX) / cellW;
+        float fz = (z - minZ) / cellD;
+
+        fx = std::clamp(fx, 0.0f, float(W - 1));
+        fz = std::clamp(fz, 0.0f, float(D - 1));
+
+        int ix = int(floor(fx));
+        int iz = int(floor(fz));
+        int ix1 = std::min(ix + 1, W - 1);
+        int iz1 = std::min(iz + 1, D - 1);
+
+        float tx = fx - ix;
+        float tz = fz - iz;
+
+        float h00 = heights[ iz  * W + ix  ];
+        float h10 = heights[ iz  * W + ix1 ];
+        float h01 = heights[ iz1 * W + ix  ];
+        float h11 = heights[ iz1 * W + ix1 ];
+
+        float h0 = glm::mix(h00, h10, tx);
+        float h1 = glm::mix(h01, h11, tx);
+        return glm::mix(h0, h1, tz) * cellW;
+    }
+};
 
 // MAIN !
 class E09 : public BaseProject
@@ -197,6 +252,7 @@ protected:
     std::vector<dReal> triVertices = {};
     std::vector<uint32_t> triIndices = {};
     dTriMeshDataID meshData = nullptr;
+    TerrainHeightmap terrain = {};
 
     const int HF_ROWS = 256;
     const int HF_COLS = 256;
@@ -661,22 +717,6 @@ protected:
 
         audioInit();
 
-        auto groundMeshId = SC.MeshIds["2DplaneTan"];
-        if (groundMeshId == -1)
-        {
-            std::cout << "ERROR: Ground mesh '2DplaneTan' not found in scene.\n";
-            exit(0);
-        }
-        else {
-            std::cout << "Ground mesh '2DplaneTan' found with ID: " << groundMeshId << "\n";
-            ground = SC.M[ groundMeshId ];
-            rawVB_original = ground->vertices;
-            // right after you fill `ground->vertices` for the very first time:
-            size_t byteSize = ground->vertices.size();  // bytes of your interleaved array
-            ground->initDynamicVertexBuffer(this /* your BaseProject ptr */, byteSize);
-            ground->updateVertexBuffer();
-        }
-
         for (int i = 0; i < PRs.size(); i++)
         {
             for (int j = 0; j < SC.TI[i].InstanceCount; j++)
@@ -702,6 +742,55 @@ protected:
         else
         {
             std::cout << "WARNING: Ground '2Dplane' not found in scene.\n";
+        }
+
+        auto groundMeshId = SC.MeshIds["2DplaneTan"];
+        if (groundMeshId == -1)
+        {
+            std::cout << "ERROR: Ground mesh '2DplaneTan' not found in scene.\n";
+            exit(0);
+        }
+        else {
+            std::cout << "Ground mesh '2DplaneTan' found with ID: " << groundMeshId << "\n";
+            ground = SC.M[ groundMeshId ];
+            rawVB_original = ground->vertices;
+            // right after you fill `ground->vertices` for the very first time:
+            size_t byteSize = ground->vertices.size();  // bytes of your interleaved array
+            ground->initDynamicVertexBuffer(this /* your BaseProject ptr */, byteSize);
+            ground->updateVertexBuffer();
+
+
+            int totalVerts = rawVB_original.size() / ground->VD->Bindings[0].stride;
+            int widthSamples = sqrt(totalVerts);      // assuming square grid
+            int depthSamples = widthSamples;
+
+
+            glm::vec3 scale;
+            scale.x = glm::length(glm::vec3(groundBaseWm[0]));
+            scale.y = glm::length(glm::vec3(groundBaseWm[1]));
+            scale.z = glm::length(glm::vec3(groundBaseWm[2]));
+
+            float meshWidth  = scale.x * (widthSamples - 1);  // world size in X
+            float meshDepth  = scale.z * (depthSamples - 1);  // world size in Z
+
+            float cellW = meshWidth / (widthSamples - 1);
+            float cellD = meshDepth / (depthSamples - 1);
+
+            std::cout << "Ground mesh size: " << meshWidth << " x " << meshDepth << "\n";
+            std::cout << "Ground mesh samples: " << widthSamples << " x " << depthSamples << "\n";
+            std::cout << "Ground mesh cell size: " << cellW << " x " << cellD << "\n";
+
+            terrain.init(
+                widthSamples,
+                depthSamples,
+                cellW,
+                cellD,
+                airplanePosition.x - meshWidth * 0.5f,
+                airplanePosition.z - meshDepth * 0.5f,
+                [this](float x, float z) {
+                    return noiseGround.GetNoise(x * 0.004f, z * 0.004f) * 0.05f;
+                }
+            );
         }
 
         assert(groundTechIdx >= 0 && groundInstIdx >= 0);
@@ -841,13 +930,31 @@ protected:
                         * HEIGHT_SCALE;
                 p->y = h;
 
-                // append directly into your ODE buffer in the same order
-                // triVertices.push_back(lx);
-                // triVertices.push_back(0);
-                // triVertices.push_back(lz);
             }
 
             ground->updateVertexBuffer();
+
+            int totalVerts = rawVB_original.size() / stride;
+            int widthSamples = sqrt(totalVerts);      // assuming square grid
+            int depthSamples = widthSamples;
+
+            float meshWidth  = scale.x * (widthSamples - 1);  // world size in X
+            float meshDepth  = scale.z * (depthSamples - 1);  // world size in Z
+
+            float cellW = meshWidth / (widthSamples - 1);
+            float cellD = meshDepth / (depthSamples - 1);
+
+            terrain.init(
+                widthSamples,
+                depthSamples,
+                cellW,
+                cellD,
+                airplanePosition.x - meshWidth * 0.5f,
+                airplanePosition.z - meshDepth * 0.5f,
+                [this](float x, float z) {
+                    return noiseGround.GetNoise(x * 0.004f, z * 0.004f) * 0.05f;
+                }
+            );
         }
         updateGroundHeightfield(glm::length(glm::vec3(groundBaseWm[1])));
     }
