@@ -134,6 +134,7 @@ protected:
     float timer = 0.f;
     bool timerDone = false;
     float gemAngle = 0.0f;
+    float spinAngle = 0.0f;
     float menuCameraAngle = 0.0f;
     float gameOverCameraAngle = 0.0f;
 
@@ -175,7 +176,7 @@ protected:
     glm::quat airplaneOrientation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
     const glm::quat airplaneModelCorrection = glm::angleAxis(glm::radians(180.0f), glm::vec3(0.0f, 1.0f, 0.0f));
     // const glm::mat4 rotorModelCorrection = glm::translate(glm::mat4(1.f), glm::vec3(-2.4644f * 0.25, 3.9877f * 0.25, 0.f)) * glm::rotate(glm::mat4(1.f), glm::radians(22.68f), glm::vec3(0.0f, 0.0f, -1.0f)) * glm::scale(glm::mat4(1.f), glm::vec3(0.25f));
-    const glm::mat4 rotorModelCorrection = glm::rotate(glm::mat4(1.f), glm::radians(22.68f), glm::vec3(0.0f, 0.0f, 1.0f)) * glm::rotate(glm::mat4(1.f), glm::radians(180.f), glm::vec3(0.0f, 1.0f, 0.0f)) * glm::scale(glm::mat4(1.f), glm::vec3(0.25f));
+    const glm::mat4 rotorModelCorrection = glm::translate(glm::mat4(1.f), glm::vec3(-2.4644f * 0.25, 3.9877f * 0.25, 0.f)) * glm::rotate(glm::mat4(1.f), glm::radians(22.68f), glm::vec3(0.0f, 0.0f, 1.0f)) * glm::rotate(glm::mat4(1.f), glm::radians(180.f), glm::vec3(0.0f, 1.0f, 0.0f)) * glm::scale(glm::mat4(1.f), glm::vec3(0.25f));
     glm::vec3 airplaneScale = glm::vec3(1.0f);
     bool airplaneInitialized = false;
     bool isEngineOn = false;
@@ -496,7 +497,7 @@ protected:
                     }, /*TotalNtextures*/2, &VDsimp);
         PRs[1].init("CookTorranceGem", {
                         {
-                            &PsimpObj, {
+                            &Pgem, {
                                 //Pipeline and DSL for the first pass
                                 /*DSLglobal*/{},
                                 /*DSLlocalSimp*/{
@@ -967,6 +968,20 @@ protected:
         {
             gemAngle -= glm::two_pi<float>();
         }
+
+        glm::mat4 airplaneGlobal =
+                                    glm::translate(glm::mat4(1.0f), airplanePosition) *
+                                    glm::mat4_cast( airplaneOrientation /* skip modelCorrection here */ ) *
+                                    glm::scale  (glm::mat4(1.0f), airplaneScale);
+
+        glm::mat4 rotorLocal =
+            glm::translate(glm::mat4(1.0f), glm::vec3(-2.4644f, 3.9877f, 0.0f)) *
+            glm::rotate   (glm::mat4(1.0f), glm::radians(22.68f), glm::vec3(0,0,-1));
+
+        spinAngle += deltaT * 25.f;
+        glm::mat4 rotorSpin =
+            glm::rotate(glm::mat4(1.0f), spinAngle, glm::vec3(1,0,0));
+        SC.TI[airplaneTechIdx].I[airplaneRotor].Wm = airplaneGlobal * rotorLocal * rotorSpin;
     }
 
     // --- Aggiorna tutti gli Uniform Buffer per il frame corrente ---
@@ -1133,11 +1148,7 @@ protected:
         }
         else if (gameState == PLAYING)
         {
-            // 2. Gestisci l'input da tastiera (ESC, debug, etc.)
             handleKeyboardInput();
-
-            // 3. Aggiorna lo stato delle animazioni (gemme, personaggio)
-            updateState(deltaT);
 
             bool isBoosting = (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS);
             float targetFov = baseFov;
@@ -1448,8 +1459,6 @@ protected:
                     glm::translate(glm::mat4(1.0f), airplanePosition) *
                     glm::mat4_cast(finalOrientation) *
                     glm::scale(glm::mat4(1.0f), airplaneScale);
-                SC.TI[airplaneTechIdx].I[airplaneRotor].Wm = glm::translate(glm::mat4(1.0f), airplanePosition) * glm::mat4_cast(finalOrientation) * rotorModelCorrection;
-                    // glm::scale(glm::mat4(1.0f), airplaneScale);
 
                 // --- Logica della Telecamera ---
                 glm::vec3 cameraOffset;
@@ -1567,7 +1576,6 @@ protected:
                     glm::translate(glm::mat4(1.0f), airplanePosition) *
                     glm::mat4_cast(airplaneOrientation * airplaneModelCorrection) *
                     glm::scale(glm::mat4(1.0f), airplaneScale);
-                SC.TI[airplaneTechIdx].I[airplaneRotor].Wm = glm::translate(glm::mat4(1.0f), airplanePosition) * glm::mat4_cast(airplaneOrientation * airplaneModelCorrection) * rotorModelCorrection;
             }
 
             // Mostra il messaggio di fine gioco
@@ -1585,7 +1593,7 @@ protected:
                       TRH_CENTER, TRV_MIDDLE, {0, 0, 0, 1}, {0, 0, 0, 1}, {0, 0, 0, 0}, 1, 1);
 
             // Aggiorna gli uniformi e il command buffer alla fine
-            updateUniforms(currentImage, deltaT);
+            // updateUniforms(currentImage, deltaT);
         }
 
         glm::mat4 projectionMatrix = glm::perspective(currentFov, Ar, 1.f, 500.f);
@@ -1617,6 +1625,8 @@ protected:
         {
             SC.TI[groundTechIdx].I[groundInstIdx].Wm = groundXzFollow * groundBaseWm;
         }
+
+        updateState(deltaT);
 
     }
 
