@@ -4,7 +4,7 @@
 		{"id": "ap", "VD": "VDsimp", "model": "assets/models/aeroplanino.obj", "format": "OBJ"},
 		{"id": "ap_rotor", "VD": "VDsimp", "model": "assets/models/aeroplanino_motore.obj", "format": "OBJ"},
 		{"id": "2Dplane", "VD": "VDsimp", "model": "assets/models/plane.obj", "format": "OBJ"},
-		{"id": "2DplaneTan", "VD": "VDtan", "model": "assets/models/2Dplane.gltf", "format": "GLTF"},
+		{"id": "2DplaneTan", "VD": "VDtan", "model": "assets/models/2Dplane_high_res.gltf", "format": "GLTF"},
 		{"id": "gem", "VD": "VDsimp", "model": "assets/models/Gem01_Blue.mgcg", "format": "MGCG"},
 		{"id": "Tree", "VD": "VDsimp", "model":  "assets/models/vegetation.030.mgcg", "format":  "MGCG"}
 	],

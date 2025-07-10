@@ -192,7 +192,10 @@ protected:
     float spinAngle = 0.0f;
     float menuCameraAngle = 0.0f;
     float gameOverCameraAngle = 0.0f;
-    float spinVelocity = 25.f;
+    float spinVelocity = 5.f;
+    float targetSpinVelocity = 5.f;
+    const float maxSpinVelocity = 25.f;
+    const float minSpinVelocity = 5.f;
 
     enum GameState { START_MENU, PLAYING, GAME_OVER };
     enum TextID { FPS,
@@ -241,6 +244,7 @@ protected:
     float thrustCoefficient = 200.0f; // Coefficiente di spinta
     float speed = 5.0f;
     float dragCoefficient = 1.0f;
+    const float maxSpeed = 20.0f; // m/s, tune to your liking
     glm::vec3 currentShakeOffset = glm::vec3(0.0f);
 
     dWorldID odeWorld = nullptr;
@@ -310,13 +314,13 @@ protected:
     void setWindowParameters()
     {
         // window size, titile and initial background
-        windowWidth = 800;
-        windowHeight = 600;
-        windowTitle = "E09 - Showing animations";
+        windowWidth = 1280;
+        windowHeight = 720;
+        windowTitle = "Computer Graphics Exam - Airplane Flight";
         windowResizable = GLFW_TRUE;
 
         // Initial aspect ratio
-        Ar = 4.0f / 3.0f;
+        Ar = 16.0f / 9.0f;
     }
 
     // What to do when the window changes size
@@ -908,20 +912,12 @@ protected:
 
             float lx = 0.f, lz = 0.f, wx = 0.f, wz = 0.f, h = 0.f;
 
-            // rebuild triVertices fresh each frame
-            // triVertices.clear();
-            // triVertices.reserve(rawVB.size() / stride * 3);
-
             for (size_t i = 0; i < rawVB.size(); i += stride) {
                 glm::vec3* p =
                     reinterpret_cast<glm::vec3*>(&rawVB[i + posOffset]);
 
                 // local XZ:
                 lx = p->x * scale.x , lz = p->z * scale.z;
-
-                // // world XZ = local + plane‐translation
-                worldOffset.x = std::floor(worldOffset.x * 100.0f) / 100.0f;
-                worldOffset.z = std::floor(worldOffset.z * 100.0f) / 100.0f;
 
                 wx = lx + worldOffset.x;
                 wz = lz + worldOffset.z;
@@ -932,7 +928,7 @@ protected:
                 p->y = h;
 
             }
-            // ------- Test normal and tanget modification -------
+            // ------- Normal, tangent and bi-tanget modification -------
 
             // 1) Allocate accumulators
             size_t vertexCount = rawVB.size() / stride;
@@ -1110,6 +1106,8 @@ protected:
         if (handleDebouncedKeyPress(GLFW_KEY_F))
         {
             isEngineOn = !isEngineOn;
+            if (isEngineOn) targetSpinVelocity = maxSpinVelocity;
+            else targetSpinVelocity = minSpinVelocity;
             std::cout << "Engine state: " << (isEngineOn ? "ON" : "OFF") << "\n";
         }
     }
@@ -1123,17 +1121,18 @@ protected:
 
         bool isBoosting = (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS);
 
-        // Calcola il moltiplicatore di velocità target
-        float targetSpeedMultiplier = isBoosting ? BOOST_MULTIPLIER : 1.0f;
-
-        // Interpola gradualmente il moltiplicatore di velocità corrente verso il target
-        float deltaSpeedMultiplier = targetSpeedMultiplier - currentSpeedMultiplier;
-        currentSpeedMultiplier += deltaSpeedMultiplier * ACCELERATION_RATE * deltaT;
-
-        // Applica il moltiplicatore alla velocità di movimento
-        float currentForwardSpeed = AIRPLANE_FORWARD_SPEED * currentSpeedMultiplier;
-
-        airplanePosition += localForward * (currentForwardSpeed * deltaT);
+        // maxSpeed = isBoosting ? 40.0f : 20.0f; // Velocità massima in base allo stato del motore
+        // // Calcola il moltiplicatore di velocità target
+        // float targetSpeedMultiplier = isBoosting ? BOOST_MULTIPLIER : 1.0f;
+        //
+        // // Interpola gradualmente il moltiplicatore di velocità corrente verso il target
+        // float deltaSpeedMultiplier = targetSpeedMultiplier - currentSpeedMultiplier;
+        // currentSpeedMultiplier += deltaSpeedMultiplier * ACCELERATION_RATE * deltaT;
+        //
+        // // Applica il moltiplicatore alla velocità di movimento
+        // float currentForwardSpeed = AIRPLANE_FORWARD_SPEED * currentSpeedMultiplier;
+        //
+        // airplanePosition += localForward * (currentForwardSpeed * deltaT);
     }
 
     // --- Aggiorna stato e animazioni ---
@@ -1397,7 +1396,7 @@ protected:
                 const dReal* pos = dBodyGetPosition(odeAirplaneBody);
                 glm::vec3 globalVel{ velocity[0], velocity[1], velocity[2] };
                 float magSpeed = glm::length(globalVel);
-                constexpr float maxSpeed = 20.0f; // m/s, tune to your liking
+
 
                 const float basePitchAccel = 25.f; // m/s^2, tune to your liking
                 const float baseYawAccel = 20.f; // m/s^2, tune to your liking
@@ -1650,6 +1649,10 @@ protected:
                     glm::translate(glm::mat4(1.0f), glm::vec3(-2.4644f, 3.9877f, 0.0f)) *
                     glm::rotate   (glm::mat4(1.0f), glm::radians(22.68f), glm::vec3(0,0,-1));
 
+                const float ROTOR_SMOOTHING = 1.0f;
+                float rotorInterpFactor = 1.0f - glm::exp(-ROTOR_SMOOTHING * deltaT);
+                spinVelocity = glm::mix(spinVelocity, targetSpinVelocity, rotorInterpFactor);
+
                 spinAngle += deltaT * spinVelocity;
                 if (spinAngle > glm::two_pi<float>()) {
                     spinAngle -= glm::two_pi<float>();
@@ -1783,6 +1786,11 @@ protected:
                 glm::mat4 rotorLocal =
                     glm::translate(glm::mat4(1.0f), glm::vec3(-2.4644f, 3.9877f, 0.0f)) *
                     glm::rotate   (glm::mat4(1.0f), glm::radians(22.68f), glm::vec3(0,0,-1));
+
+
+                const float ROTOR_SMOOTHING = 5.0f;
+                float rotorInterpFactor = 1.0f - glm::exp(-ROTOR_SMOOTHING * deltaT);
+                spinVelocity = glm::mix(spinVelocity, targetSpinVelocity, rotorInterpFactor);
 
                 spinAngle += deltaT * spinVelocity;
                 if (spinAngle > glm::two_pi<float>()) {
