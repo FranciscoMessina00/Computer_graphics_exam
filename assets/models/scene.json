@@ -5,7 +5,8 @@
 		{"id": "ap_rotor", "VD": "VDsimp", "model": "assets/models/aeroplanino_motore.obj", "format": "OBJ"},
 		{"id": "2Dplane", "VD": "VDsimp", "model": "assets/models/plane.obj", "format": "OBJ"},
 		{"id": "2DplaneTan", "VD": "VDtan", "model": "assets/models/2Dplane.gltf", "format": "GLTF"},
-		{"id": "gem", "VD": "VDsimp", "model": "assets/models/Gem01_Blue.mgcg", "format": "MGCG"}
+		{"id": "gem", "VD": "VDsimp", "model": "assets/models/Gem01_Blue.mgcg", "format": "MGCG"},
+		{"id": "Tree", "VD": "VDsimp", "model":  "assets/models/vegetation.030.mgcg", "format":  "MGCG"}
 	],
 	"textures": [
 		{"id": "pnois", "texture": "assets/textures/Perlin_noise.png", "format": "C"},
@@ -18,7 +19,8 @@
 		{"id": "GrassAlbedo", "texture": "assets/textures/GrassTexture/grass_albedo.jpg", "format": "C"},
 		{"id": "GrassNm", "texture": "assets/textures/GrassTexture/grass_nm.jpg", "format": "D"},
 		{"id": "GrassOcclusion", "texture": "assets/textures/GrassTexture/grass_occlusion.jpg", "format": "D"},
-		{"id": "GrassRoughness", "texture": "assets/textures/GrassTexture/grass_roughness.jpg", "format": "D"}
+		{"id": "GrassRoughness", "texture": "assets/textures/GrassTexture/grass_roughness.jpg", "format": "D"},
+		{"id": "Tree", "texture": "assets/textures/Textures_Vegetation.png", "format": "D"}
 
 	],
 	"instances": [
@@ -32,6 +34,54 @@
 				"eulerAngles": [0, 0, 0],
 				"scale": [0.25, 0.25, 0.25],
 				"translate": [-10, 0.5, 0]
+			},
+			{"id": "Tree1",  "model": "Tree",   "texture": ["Tree", "pnois"],
+				"scale": [4, 4, 4]
+			},
+			{"id": "Tree2",  "model": "Tree",   "texture": ["Tree", "pnois"],
+				"scale": [4, 4, 4]
+			},
+			{"id": "Tree3",  "model": "Tree",   "texture": ["Tree", "pnois"],
+				"scale": [4, 4, 4]
+			},
+			{"id": "Tree4",  "model": "Tree",   "texture": ["Tree", "pnois"],
+				"scale": [4, 4, 4]
+			},
+			{"id": "Tree5",  "model": "Tree",   "texture": ["Tree", "pnois"],
+				"scale": [4, 4, 4]
+			},
+			{"id": "Tree6",  "model": "Tree",   "texture": ["Tree", "pnois"],
+				"scale": [4, 4, 4]
+			},
+			{"id": "Tree7",  "model": "Tree",   "texture": ["Tree", "pnois"],
+				"scale": [4, 4, 4]
+			},
+			{"id": "Tree8",  "model": "Tree",   "texture": ["Tree", "pnois"],
+				"scale": [4, 4, 4]
+			},
+			{"id": "Tree9",  "model": "Tree",   "texture": ["Tree", "pnois"],
+				"scale": [4, 4, 4]
+			},
+			{"id": "Tree10",  "model": "Tree",   "texture": ["Tree", "pnois"],
+				"scale": [4, 4, 4]
+			},
+			{"id": "Tree11",  "model": "Tree",   "texture": ["Tree", "pnois"],
+				"scale": [4, 4, 4]
+			},
+			{"id": "Tree12",  "model": "Tree",   "texture": ["Tree", "pnois"],
+				"scale": [4, 4, 4]
+			},
+			{"id": "Tree13",  "model": "Tree",   "texture": ["Tree", "pnois"],
+				"scale": [4, 4, 4]
+			},
+			{"id": "Tree14",  "model": "Tree",   "texture": ["Tree", "pnois"],
+				"scale": [4, 4, 4]
+			},
+			{"id": "Tree15",  "model": "Tree",   "texture": ["Tree", "pnois"],
+				"scale": [4, 4, 4]
+			},
+			{"id": "Tree16",  "model": "Tree",   "texture": ["Tree", "pnois"],
+				"scale": [4, 4, 4]
 			}
 		]},
 		{"technique": "CookTorranceGem", "elements": [

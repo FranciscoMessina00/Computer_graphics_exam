@@ -128,7 +128,7 @@ protected:
     std::vector<glm::mat4> gemWorlds; // world transforms for each spawned gem
     std::vector<bool> gemsCatched = {false, false, false, false, false, false, false, false, false, false};
     int gemsCollected = 0;
-    int gemsToCollect = 1; // total number of gems to collect
+    int gemsToCollect = 10; // total number of gems to collect
     float gemScale = 0.20f; // scale of the gem model
     float catchRadius = 2.5f;
     float timer = 0.f;
