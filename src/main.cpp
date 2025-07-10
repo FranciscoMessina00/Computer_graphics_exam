@@ -128,7 +128,7 @@ protected:
     std::vector<glm::mat4> gemWorlds; // world transforms for each spawned gem
     std::vector<bool> gemsCatched = {false, false, false, false, false, false, false, false, false, false};
     int gemsCollected = 0;
-    int gemsToCollect = 10; // total number of gems to collect
+    int gemsToCollect = 1; // total number of gems to collect
     float gemScale = 0.20f; // scale of the gem model
     float catchRadius = 2.5f;
     float timer = 0.f;
@@ -968,20 +968,6 @@ protected:
         {
             gemAngle -= glm::two_pi<float>();
         }
-
-        glm::mat4 airplaneGlobal =
-                                    glm::translate(glm::mat4(1.0f), airplanePosition) *
-                                    glm::mat4_cast( airplaneOrientation /* skip modelCorrection here */ ) *
-                                    glm::scale  (glm::mat4(1.0f), airplaneScale);
-
-        glm::mat4 rotorLocal =
-            glm::translate(glm::mat4(1.0f), glm::vec3(-2.4644f, 3.9877f, 0.0f)) *
-            glm::rotate   (glm::mat4(1.0f), glm::radians(22.68f), glm::vec3(0,0,-1));
-
-        spinAngle += deltaT * 25.f;
-        glm::mat4 rotorSpin =
-            glm::rotate(glm::mat4(1.0f), spinAngle, glm::vec3(1,0,0));
-        SC.TI[airplaneTechIdx].I[airplaneRotor].Wm = airplaneGlobal * rotorLocal * rotorSpin;
     }
 
     // --- Aggiorna tutti gli Uniform Buffer per il frame corrente ---
@@ -1131,6 +1117,20 @@ protected:
             glm::mat4 projectionMatrix = glm::perspective(currentFov, Ar, 1.f, 500.f);
             projectionMatrix[1][1] *= -1;
             viewMatrix = glm::lookAt(cameraPos, cameraLookAt, glm::vec3(0.0f, 1.0f, 0.0f));
+
+            glm::mat4 airplaneGlobal =
+                                glm::translate(glm::mat4(1.0f), airplanePosition) *
+                                glm::mat4_cast( airplaneOrientation /* skip modelCorrection here */ ) *
+                                glm::scale  (glm::mat4(1.0f), airplaneScale);
+
+            glm::mat4 rotorLocal =
+                glm::translate(glm::mat4(1.0f), glm::vec3(-2.4644f, 3.9877f, 0.0f)) *
+                glm::rotate   (glm::mat4(1.0f), glm::radians(22.68f), glm::vec3(0,0,-1));
+
+            spinAngle += deltaT * 25.f;
+            glm::mat4 rotorSpin =
+                glm::rotate(glm::mat4(1.0f), spinAngle, glm::vec3(1,0,0));
+            SC.TI[airplaneTechIdx].I[airplaneRotor].Wm = airplaneGlobal * rotorLocal * rotorSpin;
 
             ViewPrj = projectionMatrix * viewMatrix;
 
@@ -1460,6 +1460,20 @@ protected:
                     glm::mat4_cast(finalOrientation) *
                     glm::scale(glm::mat4(1.0f), airplaneScale);
 
+                glm::mat4 airplaneGlobal =
+                                    glm::translate(glm::mat4(1.0f), airplanePosition) *
+                                    glm::mat4_cast( airplaneOrientation /* skip modelCorrection here */ ) *
+                                    glm::scale  (glm::mat4(1.0f), airplaneScale);
+
+                glm::mat4 rotorLocal =
+                    glm::translate(glm::mat4(1.0f), glm::vec3(-2.4644f, 3.9877f, 0.0f)) *
+                    glm::rotate   (glm::mat4(1.0f), glm::radians(22.68f), glm::vec3(0,0,-1));
+
+                spinAngle += deltaT * 25.f;
+                glm::mat4 rotorSpin =
+                    glm::rotate(glm::mat4(1.0f), spinAngle, glm::vec3(1,0,0));
+                SC.TI[airplaneTechIdx].I[airplaneRotor].Wm = airplaneGlobal * rotorLocal * rotorSpin;
+
                 // --- Logica della Telecamera ---
                 glm::vec3 cameraOffset;
                 glm::vec3 targetCameraLookAt = airplanePosition;
@@ -1576,12 +1590,26 @@ protected:
                     glm::translate(glm::mat4(1.0f), airplanePosition) *
                     glm::mat4_cast(airplaneOrientation * airplaneModelCorrection) *
                     glm::scale(glm::mat4(1.0f), airplaneScale);
+
+                glm::mat4 airplaneGlobal =
+                                glm::translate(glm::mat4(1.0f), airplanePosition) *
+                                glm::mat4_cast( airplaneOrientation /* skip modelCorrection here */ ) *
+                                glm::scale  (glm::mat4(1.0f), airplaneScale);
+
+                glm::mat4 rotorLocal =
+                    glm::translate(glm::mat4(1.0f), glm::vec3(-2.4644f, 3.9877f, 0.0f)) *
+                    glm::rotate   (glm::mat4(1.0f), glm::radians(22.68f), glm::vec3(0,0,-1));
+
+                spinAngle += deltaT * 25.f;
+                glm::mat4 rotorSpin =
+                    glm::rotate(glm::mat4(1.0f), spinAngle, glm::vec3(1,0,0));
+                SC.TI[airplaneTechIdx].I[airplaneRotor].Wm = airplaneGlobal * rotorLocal * rotorSpin;
             }
 
             // Mostra il messaggio di fine gioco
             std::ostringstream oss;
             if (gemsCollected == gemsToCollect) {
-                oss << "Hai raccolto tuttele gemme!";
+                oss << "Hai raccolto tutte le gemme!";
             }
             else {
                 oss << "Hai raccolto solo " << gemsCollected << " gemme su " << gemsToCollect << ". Hai perso!";
