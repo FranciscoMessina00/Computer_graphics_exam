@@ -293,6 +293,11 @@ protected:
     ALCcontext* context = nullptr;
     ALuint audio_source = -1;
     ALuint audio_buffer = -1;
+    ALuint engineBuffers[2];
+    ALuint engineSources[2];
+
+    float sourceGains[2] = { 0.2f, 0.f };
+    const float fadeSpeed = 1.5f; // larger = faster cross‑fade
 
 
     // Indici per il pavimento
@@ -1850,6 +1855,7 @@ protected:
         }
 
         updateState(deltaT);
+        updateEngineAudio(deltaT);
 
     }
 
@@ -1959,11 +1965,22 @@ protected:
         // alSource3f(audio_source, AL_VELOCITY, 0, 0, 0);
         // alDistanceModel(AL_INVERSE_DISTANCE_CLAMPED);
 
-        loadWavToBuffer("assets/audios/audio.wav");
+        loadWavToBuffer(audio_buffer, "assets/audios/audio.wav");
+        loadWavToBuffer(engineBuffers[0], "assets/audios/engine_idle.wav");
+        loadWavToBuffer(engineBuffers[1], "assets/audios/engine_running.wav");
 
         alSourcei(audio_source, AL_BUFFER, audio_buffer);
         alSourcei(audio_source, AL_LOOPING, AL_TRUE);
-        // alSourcePlay(audio_source);
+        alSourcef(audio_source, AL_GAIN, 0.3f);
+
+        alGenSources(2, engineSources);
+        for (int i = 0; i < 2; ++i) {
+            alSourcei(engineSources[i], AL_BUFFER, engineBuffers[i]);
+            alSourcei(engineSources[i], AL_LOOPING, AL_TRUE);
+            alSourcef(engineSources[i], AL_GAIN, sourceGains[i]);
+            alSourcePlay(engineSources[i]);
+        }
+        alSourcePlay(audio_source);
     }
 
     void audioCleanUp()
@@ -1975,7 +1992,7 @@ protected:
         alcCloseDevice(device);
     }
 
-    void loadWavToBuffer(const char* fileName)
+    void loadWavToBuffer(ALuint& buffer, const char* fileName)
     {
         // 2) Load WAV into an OpenAL buffer
         drwav wav;
@@ -1992,11 +2009,33 @@ protected:
         ALenum format = (wav.channels == 1 ? AL_FORMAT_MONO16 : AL_FORMAT_STEREO16);
         std::cerr << "Format: " << format << std::endl;
 
-        alGenBuffers(1, &audio_buffer);
-        alBufferData(audio_buffer, format, pcmData,
+        alGenBuffers(1, &buffer);
+        alBufferData(buffer, format, pcmData,
                      (ALsizei)(totalSamples * sizeof(int16_t)),
                      wav.sampleRate);
         free(pcmData);
+    }
+
+    void updateEngineAudio(float deltaTime) {
+
+        // Decide target gains
+        float targetGains[2] = {
+            isEngineOn ? 0.f : 0.2f,  // idle fades out when engine on
+            isEngineOn ? 0.2f : 0.f   // running fades in when engine on
+        };
+
+        // Smooth‑step towards targets
+        for (int i = 0; i < 2; ++i) {
+            float diff = targetGains[i] - sourceGains[i];
+            // clamp step so we don’t overshoot
+            float step = fadeSpeed * deltaTime;
+            if (fabs(diff) < step) {
+                sourceGains[i] = targetGains[i];
+            } else {
+                sourceGains[i] += (diff > 0 ? +step : -step);
+            }
+            alSourcef(engineSources[i], AL_GAIN, sourceGains[i]);
+        }
     }
 
     void exportTriMeshToOBJ(const std::string &path,
