@@ -183,7 +183,7 @@ protected:
     std::vector<glm::mat4> gemWorlds; // world transforms for each spawned gem
     std::vector<bool> gemsCatched = {false, false, false, false, false, false, false, false, false, false};
     int gemsCollected = 0;
-    int gemsToCollect = 1; // total number of gems to collect
+    int gemsToCollect = 10; // total number of gems to collect
     float gemScale = 0.20f; // scale of the gem model
     float catchRadius = 2.5f;
     float timer = 0.f;
@@ -192,6 +192,7 @@ protected:
     float spinAngle = 0.0f;
     float menuCameraAngle = 0.0f;
     float gameOverCameraAngle = 0.0f;
+    float spinVelocity = 25.f;
 
     enum GameState { START_MENU, PLAYING, GAME_OVER };
     enum TextID { FPS,
@@ -931,7 +932,77 @@ protected:
                 p->y = h;
 
             }
+            // ------- Test normal and tanget modification -------
 
+            // 1) Allocate accumulators
+            size_t vertexCount = rawVB.size() / stride;
+            std::vector<glm::vec3> nAccum(vertexCount, glm::vec3(0.0f));
+            std::vector<glm::vec3> tAccum(vertexCount, glm::vec3(0.0f));
+            std::vector<glm::vec3> bAccum(vertexCount, glm::vec3(0.0f));
+
+            // 2) Loop over every triangle to accumulate normals & tangents
+            for (size_t tri = 0; tri < ground->indices.size(); tri += 3) {
+                uint32_t i0 = ground->indices[tri + 0];
+                uint32_t i1 = ground->indices[tri + 1];
+                uint32_t i2 = ground->indices[tri + 2];
+
+                // read positions
+                auto p0 = reinterpret_cast<glm::vec3*>(&rawVB[i0*stride + posOffset]);
+                auto p1 = reinterpret_cast<glm::vec3*>(&rawVB[i1*stride + posOffset]);
+                auto p2 = reinterpret_cast<glm::vec3*>(&rawVB[i2*stride + posOffset]);
+
+                glm::vec3 P0 = *p0, P1 = *p1, P2 = *p2;
+
+                // read UVs
+                auto uv0 = reinterpret_cast<glm::vec2*>(&rawVB[i0*stride + ground->VD->UV.offset]);
+                auto uv1 = reinterpret_cast<glm::vec2*>(&rawVB[i1*stride + ground->VD->UV.offset]);
+                auto uv2 = reinterpret_cast<glm::vec2*>(&rawVB[i2*stride + ground->VD->UV.offset]);
+
+                glm::vec2 UV0 = *uv0, UV1 = *uv1, UV2 = *uv2;
+
+                // face normal
+                glm::vec3 edge1 = P1 - P0;
+                glm::vec3 edge2 = P2 - P0;
+                glm::vec3 faceN = glm::normalize(glm::cross(edge1, edge2));
+
+                // accumulate
+                nAccum[i0] += faceN;
+                nAccum[i1] += faceN;
+                nAccum[i2] += faceN;
+
+                // compute tangent & bitangent
+                glm::vec2 dUV1 = UV1 - UV0;
+                glm::vec2 dUV2 = UV2 - UV0;
+                float r = 1.0f / (dUV1.x * dUV2.y - dUV2.x * dUV1.y);
+                glm::vec3 tangent = (edge1 * dUV2.y - edge2 * dUV1.y) * r;
+                glm::vec3 bitan   = (edge2 * dUV1.x - edge1 * dUV2.x) * r;
+
+                tAccum[i0] += tangent;  bAccum[i0] += bitan;
+                tAccum[i1] += tangent;  bAccum[i1] += bitan;
+                tAccum[i2] += tangent;  bAccum[i2] += bitan;
+            }
+
+            // 3) Orthonormalize per-vertex and write back into rawVB
+            for (size_t vi = 0; vi < vertexCount; ++vi) {
+                // normalize accumulated normal
+                glm::vec3 n = glm::normalize(nAccum[vi]);
+
+                // Gram‑Schmidt tangent
+                glm::vec3 t = tAccum[vi];
+                t = glm::normalize(t - n * glm::dot(n, t));
+
+                // handedness
+                float h = (glm::dot(glm::cross(n, t), bAccum[vi]) < 0.0f) ? -1.0f : +1.0f;
+
+                // write back
+                auto dstN = reinterpret_cast<glm::vec3*>(&rawVB[vi*stride + ground->VD->Normal.offset]);
+                *dstN = n;
+
+                auto dstT = reinterpret_cast<glm::vec4*>(&rawVB[vi*stride + ground->VD->Tangent.offset]);
+                *dstT = glm::vec4(t, h);
+            }
+
+            // ---------------------------------------------------
             ground->updateVertexBuffer();
 
             int totalVerts = rawVB_original.size() / stride;
@@ -1234,7 +1305,10 @@ protected:
                 glm::translate(glm::mat4(1.0f), glm::vec3(-2.4644f, 3.9877f, 0.0f)) *
                 glm::rotate   (glm::mat4(1.0f), glm::radians(22.68f), glm::vec3(0,0,-1));
 
-            spinAngle += deltaT * 25.f;
+            spinAngle += deltaT * spinVelocity;
+            if (spinAngle > glm::two_pi<float>()) {
+                spinAngle -= glm::two_pi<float>();
+            }
             glm::mat4 rotorSpin =
                 glm::rotate(glm::mat4(1.0f), spinAngle, glm::vec3(1,0,0));
             SC.TI[airplaneTechIdx].I[airplaneRotor].Wm = airplaneGlobal * rotorLocal * rotorSpin;
@@ -1576,7 +1650,10 @@ protected:
                     glm::translate(glm::mat4(1.0f), glm::vec3(-2.4644f, 3.9877f, 0.0f)) *
                     glm::rotate   (glm::mat4(1.0f), glm::radians(22.68f), glm::vec3(0,0,-1));
 
-                spinAngle += deltaT * 25.f;
+                spinAngle += deltaT * spinVelocity;
+                if (spinAngle > glm::two_pi<float>()) {
+                    spinAngle -= glm::two_pi<float>();
+                }
                 glm::mat4 rotorSpin =
                     glm::rotate(glm::mat4(1.0f), spinAngle, glm::vec3(1,0,0));
                 SC.TI[airplaneTechIdx].I[airplaneRotor].Wm = airplaneGlobal * rotorLocal * rotorSpin;
@@ -1707,7 +1784,10 @@ protected:
                     glm::translate(glm::mat4(1.0f), glm::vec3(-2.4644f, 3.9877f, 0.0f)) *
                     glm::rotate   (glm::mat4(1.0f), glm::radians(22.68f), glm::vec3(0,0,-1));
 
-                spinAngle += deltaT * 25.f;
+                spinAngle += deltaT * spinVelocity;
+                if (spinAngle > glm::two_pi<float>()) {
+                    spinAngle -= glm::two_pi<float>();
+                }
                 glm::mat4 rotorSpin =
                     glm::rotate(glm::mat4(1.0f), spinAngle, glm::vec3(1,0,0));
                 SC.TI[airplaneTechIdx].I[airplaneRotor].Wm = airplaneGlobal * rotorLocal * rotorSpin;
