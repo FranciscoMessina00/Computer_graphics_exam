@@ -295,10 +295,16 @@ protected:
     ALuint audio_buffer = -1;
     ALuint engineBuffers[2];
     ALuint engineSources[2];
+    ALuint gemBuffers[10];
+    ALuint gemSources[10];
+    ALuint gemCollectedSource = -1;
+    ALuint gemCollectedBuffer = -1;
 
-    float sourceGains[2] = { 0.2f, 0.f };
+    float sourceGains[2] = { 1.f, 0.f };
+    float gemSourceGain = 1.f;
+    float gemCollectedGain = 0.3f;
+    float enginePitch = 1.0f; // Pitch of the engine sound
     const float fadeSpeed = 1.5f; // larger = faster cross‑fade
-
 
     // Indici per il pavimento
     int groundTechIdx = -1;
@@ -1716,6 +1722,17 @@ protected:
                     dReal fy = 0;
                     dReal fz = 0;
                     dBodyAddRelForce(odeAirplaneBody, -fx, fy, fz);
+                    const float PITCH_INTERP_SPEED = 1.0f;
+                    float pitchInterpFactor = 1.0f - glm::exp(-PITCH_INTERP_SPEED * deltaT);
+                    enginePitch = glm::mix(enginePitch, 1.3f, pitchInterpFactor);
+                    alSourcef(engineSources[1], AL_PITCH, enginePitch); // Aumenta il pitch del suono del motore
+                }
+                else
+                {
+                    const float PITCH_INTERP_SPEED = 1.0f;
+                    float pitchInterpFactor = 1.0f - glm::exp(-PITCH_INTERP_SPEED * deltaT);
+                    enginePitch = glm::mix(enginePitch, 1.f, pitchInterpFactor);
+                    alSourcef(engineSources[1], AL_PITCH, enginePitch); // Resetta il pitch del suono del motore
                 }
                 const float SHAKE_INTERP_SPEED = 10.0f;
                 float shakeInterpFactor = 1.0f - glm::exp(-SHAKE_INTERP_SPEED * deltaT);
@@ -1831,18 +1848,21 @@ protected:
 
         updateUniforms(currentImage, deltaT);
 
-        // alListener3f(AL_POSITION, cameraPos.x, cameraPos.y, cameraPos.z);
-        // alListener3f(AL_VELOCITY, airplaneVelocity.x, airplaneVelocity.y, airplaneVelocity.z);
+        alListener3f(AL_POSITION, cameraPos.x, cameraPos.y, cameraPos.z);
+        alListener3f(AL_VELOCITY, airplaneVelocity.x, airplaneVelocity.y, airplaneVelocity.z);
+        for (unsigned int engineSource : engineSources) {
+            alSource3f(engineSource, AL_POSITION, airplanePosition.x, airplanePosition.y, airplanePosition.z);
+        }
 
-        // glm::vec3 forward = glm::normalize(cameraLookAt - cameraPos);
-        // glm::vec3 worldUp(0.0f, 1.0f, 0.0f);
-        // glm::vec3 right = glm::normalize(glm::cross(forward, worldUp));
-        // glm::vec3 up = glm::cross(right, forward);
-        // float ori[6] = {
-        //     forward.x, forward.y, forward.z,
-        //     up.x, up.y, up.z
-        // };
-        // alListenerfv(AL_ORIENTATION, ori);
+        glm::vec3 forward = glm::normalize(cameraLookAt - cameraPos);
+        glm::vec3 worldUp(0.0f, 1.0f, 0.0f);
+        glm::vec3 right = glm::normalize(glm::cross(forward, worldUp));
+        glm::vec3 up = glm::cross(right, forward);
+        float ori[6] = {
+            forward.x, forward.y, forward.z,
+            up.x, up.y, up.z
+        };
+        alListenerfv(AL_ORIENTATION, ori);
 
         glm::mat4 groundXzFollow = glm::translate(
             glm::mat4(1.0f),
@@ -1864,10 +1884,8 @@ protected:
     {
         for (int i = 0; i < gemWorlds.size(); i++)
         {
-            // 1) Get gem position (translation column of the mat4)
             auto gemPos = glm::vec3(gemWorlds[i][3]);
 
-            // 2) If within radius and not yet caught...
             if (const float dist = glm::distance(gemPos, airplanePosition); dist < catchRadius && !gemsCatched[i])
             {
                 gemsCatched[i] = true;
@@ -1878,23 +1896,31 @@ protected:
                 oss << "Gems collected: " << std::fixed << std::setprecision(1) << gemsCollected << "/" << gemWorlds.size();
                 txt.print(-1.0f, -1.0f, oss.str(), COLLECTED_GEMS_TEXT, "SS", false, false, true, TAL_LEFT, TRH_LEFT, TRV_TOP,
                           {0.0f, 0.0f, 0.0f, 1.0f}, {1.f, 1.f, 1.f, 1.0f});
+                alSourceStop(gemSources[i]);
+                alSourcePlay(gemCollectedSource);
             }
         }
-        // if ((timer > 120.f && !timerDone) || )
-        // {
-        //     std::cout << "Time's up!" << std::endl;
-        //     timerDone = true;
-        // }
     }
 
     void initGems() {
         distX = std::uniform_real_distribution<float>(airplanePosition.x - 100.0f, airplanePosition.x + 100.0f);
         distY = std::uniform_real_distribution<float>(10.0f, 80.0f);
         distZ = std::uniform_real_distribution<float>(airplanePosition.z - 100.0f, airplanePosition.z + 100.0f);
-        for (auto& M : gemWorlds)
+        for (int i = 0; i < gemWorlds.size(); i++)
         {
-            M = glm::translate(glm::mat4(1.0f), {distX(rng), distY(rng), distZ(rng)}) * glm::scale(
+            alSourceStop(gemSources[i]);
+            auto& M = gemWorlds[i];
+            auto xRandom = distX(rng);
+            auto zRandom = distZ(rng);
+            auto yRandom = distY(rng) + terrain.sampleHeight(xRandom, zRandom);
+            M = glm::translate(glm::mat4(1.0f), {xRandom, yRandom, zRandom}) * glm::scale(
                 glm::mat4(1.0f), glm::vec3(gemScale));
+
+            // Move source audio position to gem position
+            alSource3f(gemSources[i], AL_POSITION, xRandom, yRandom, zRandom);
+            gemsCatched[i] = false; // Reset catch status
+            gemsCollected = 0; // Reset collected gems count
+            alSourcePlay(gemSources[i]);
         }
         std::ostringstream oss;
         oss << "Gems collected: " << std::fixed << std::setprecision(1) << gemsCollected << "/" << gemWorlds.size();
@@ -1902,33 +1928,33 @@ protected:
                           {0.0f, 0.0f, 0.0f, 1.0f}, {1.f, 1.f, 1.f, 1.0f});
     }
 
-    void initGroundCollision()
-    {
-        size_t stride    = ground->VD->Bindings[0].stride;
-        size_t posOffset = ground->VD->Position.offset;  // byte‑offset in each vertex
-        // 1) build triVertices & triIndices from your rawVB_original / ground->indices:
-        triVertices.reserve(rawVB_original.size() / stride * 3);
-        triIndices   = ground->indices;                // copy once
-
-        for (size_t i = 0; i < rawVB_original.size(); i += stride) {
-            glm::vec3* p = reinterpret_cast<glm::vec3*>(&rawVB_original[i + posOffset]);
-            triVertices.push_back(p->x);
-            triVertices.push_back(0.0f);  // start flat
-            triVertices.push_back(p->z);
-        }
-
-        // 2) create and build the meshData
-        meshData = dGeomTriMeshDataCreate();
-        dGeomTriMeshDataBuildSimple(
-          meshData,
-          triVertices.data(),  triVertices.size()/3,
-          triIndices.data(),   triIndices.size()/3
-        );
-
-        // 3) make a single trimesh geom
-        // odeGroundPlane = dCreateTriMesh(odeSpace, meshData,
-                                        // nullptr, nullptr, nullptr);
-    }
+    // void initGroundCollision()
+    // {
+    //     size_t stride    = ground->VD->Bindings[0].stride;
+    //     size_t posOffset = ground->VD->Position.offset;  // byte‑offset in each vertex
+    //     // 1) build triVertices & triIndices from your rawVB_original / ground->indices:
+    //     triVertices.reserve(rawVB_original.size() / stride * 3);
+    //     triIndices   = ground->indices;                // copy once
+    //
+    //     for (size_t i = 0; i < rawVB_original.size(); i += stride) {
+    //         glm::vec3* p = reinterpret_cast<glm::vec3*>(&rawVB_original[i + posOffset]);
+    //         triVertices.push_back(p->x);
+    //         triVertices.push_back(0.0f);  // start flat
+    //         triVertices.push_back(p->z);
+    //     }
+    //
+    //     // 2) create and build the meshData
+    //     meshData = dGeomTriMeshDataCreate();
+    //     dGeomTriMeshDataBuildSimple(
+    //       meshData,
+    //       triVertices.data(),  triVertices.size()/3,
+    //       triIndices.data(),   triIndices.size()/3
+    //     );
+    //
+    //     // 3) make a single trimesh geom
+    //     // odeGroundPlane = dCreateTriMesh(odeSpace, meshData,
+    //                                     // nullptr, nullptr, nullptr);
+    // }
 
     void audioInit()
     {
@@ -1950,37 +1976,58 @@ protected:
 
         // 3) Set up the listener (camera) defaults
         //    Position at origin, no velocity
-        // alListener3f(AL_POSITION, 0.0f, 0.0f, 0.0f);
-        // alListener3f(AL_VELOCITY, 0.0f, 0.0f, 0.0f);
+        alListener3f(AL_POSITION, 0.0f, 0.0f, 0.0f);
+        alListener3f(AL_VELOCITY, 0.0f, 0.0f, 0.0f);
 
         //    Orientation: facing down −Z, with +Y as up
-        // float listenerOri[] = {
-        //     0.0f, 0.0f, -1.0f, // “forward” vector
-        //     0.0f, 1.0f, 0.0f // “up” vector
-        // };
-        // alListenerfv(AL_ORIENTATION, listenerOri);
+        float listenerOri[] = {
+            0.0f, 0.0f, -1.0f, // “forward” vector
+            0.0f, 1.0f, 0.0f // “up” vector
+        };
+        alListenerfv(AL_ORIENTATION, listenerOri);
 
         alGenSources(1, &audio_source);
         // alSource3f(audio_source, AL_POSITION, 0, 0, 0);
         // alSource3f(audio_source, AL_VELOCITY, 0, 0, 0);
-        // alDistanceModel(AL_INVERSE_DISTANCE_CLAMPED);
+        alDistanceModel(AL_INVERSE_DISTANCE_CLAMPED);
 
         loadWavToBuffer(audio_buffer, "assets/audios/audio.wav");
         loadWavToBuffer(engineBuffers[0], "assets/audios/engine_idle.wav");
         loadWavToBuffer(engineBuffers[1], "assets/audios/engine_running.wav");
+        loadWavToBuffer(gemCollectedBuffer, "assets/audios/gem_collected.wav");
 
         alSourcei(audio_source, AL_BUFFER, audio_buffer);
         alSourcei(audio_source, AL_LOOPING, AL_TRUE);
-        alSourcef(audio_source, AL_GAIN, 0.3f);
+        alSourcef(audio_source, AL_GAIN, 0.1f);
+        alSourcePlay(audio_source);
 
         alGenSources(2, engineSources);
         for (int i = 0; i < 2; ++i) {
             alSourcei(engineSources[i], AL_BUFFER, engineBuffers[i]);
             alSourcei(engineSources[i], AL_LOOPING, AL_TRUE);
             alSourcef(engineSources[i], AL_GAIN, sourceGains[i]);
+            alSourcei(engineSources[i], AL_SOURCE_RELATIVE, AL_FALSE);
+            alSource3f(engineSources[i], AL_POSITION, airplanePosition.x, airplanePosition.y, airplanePosition.z);
             alSourcePlay(engineSources[i]);
         }
-        alSourcePlay(audio_source);
+
+        alGenSources(10, gemSources);
+        for (int i = 0; i < 10; ++i) {
+            loadWavToBuffer(gemBuffers[i], "assets/audios/gem_ambient.wav");
+            alSourcei(gemSources[i], AL_BUFFER, gemBuffers[i]);
+            alSourcei(gemSources[i], AL_LOOPING, AL_TRUE);
+            alSourcef(gemSources[i], AL_GAIN, gemSourceGain);
+            //alSourcePlay(gemSources[i]);
+        }
+
+        alGenSources(1, &gemCollectedSource);
+        alSourcei(gemCollectedSource, AL_BUFFER, gemCollectedBuffer);
+        alSourcei(gemCollectedSource, AL_LOOPING, AL_FALSE);
+        alSourcef(gemCollectedSource, AL_GAIN, gemCollectedGain);
+        alSourcei(gemCollectedSource, AL_SOURCE_RELATIVE, AL_TRUE);
+        alSource3f(gemCollectedSource, AL_POSITION, 0.0f, 0.0f, 0.0f);
+
+
     }
 
     void audioCleanUp()
@@ -2020,8 +2067,8 @@ protected:
 
         // Decide target gains
         float targetGains[2] = {
-            isEngineOn ? 0.f : 0.2f,  // idle fades out when engine on
-            isEngineOn ? 0.2f : 0.f   // running fades in when engine on
+            isEngineOn ? 0.f : 1.f,  // idle fades out when engine on
+            isEngineOn ? 1.f : 0.f   // running fades in when engine on
         };
 
         // Smooth‑step towards targets
