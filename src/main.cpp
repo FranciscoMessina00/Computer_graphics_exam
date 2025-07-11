@@ -79,6 +79,15 @@ struct skyBoxUniformBufferObject
     alignas(16) glm::mat4 mvpMat;
 };
 
+struct TreeInstance
+{
+    int techIdx;
+    int instIdx;
+};
+std::vector<TreeInstance> treeInstances;
+const float TREE_SPAWN_RADIUS = 200.0f;
+const float TREE_DESPAWN_RADIUS = 220.0f;
+
 struct TerrainHeightmap {
     float minX, minZ;       // World-space origin of terrain grid
     float cellW, cellD;     // Width and depth of each cell
@@ -371,8 +380,34 @@ protected:
                          airplanePosition.z);
     }
 
+    void resetTreePosition(const TreeInstance& tree, const glm::vec3& centerPos) {
+        // Genera una posizione casuale in un anello attorno al centro (centerPos)
+        float angle = std::uniform_real_distribution<float>(0.0f, glm::two_pi<float>())(rng);
+        float distance = std::uniform_real_distribution<float>(20.0f, TREE_SPAWN_RADIUS)(rng); // Inizia da 20 per non spawnare alberi troppo vicini
+
+        float treeX = centerPos.x + distance * cos(angle);
+        float treeZ = centerPos.z + distance * sin(angle);
+
+        // Trova l'altezza del terreno in quella posizione
+        // NOTA: Assicurati che la tua heightmap 'terrain' copra quest'area.
+        // Potrebbe essere necessario aggiornarla come fai per la fisica.
+        float treeY = terrain.sampleHeight(treeX, treeZ);
+
+        // Aggiungi una scala e una rotazione casuale per un aspetto più naturale
+        float scale = std::uniform_real_distribution<float>(0.8f, 1.5f)(rng);
+        float yRotation = std::uniform_real_distribution<float>(0.0f, glm::two_pi<float>())(rng);
+
+        // Costruisci la nuova matrice del mondo per l'albero
+        glm::mat4 newWorldMatrix = glm::translate(glm::mat4(1.0f), glm::vec3(treeX, treeY, treeZ)) *
+                                   glm::rotate(glm::mat4(1.0f), yRotation, glm::vec3(0.0f, 1.0f, 0.0f)) *
+                                   glm::scale(glm::mat4(1.0f), glm::vec3(scale));
+
+        // Aggiorna la matrice dell'istanza nella scena
+        SC.TI[tree.techIdx].I[tree.instIdx].Wm = newWorldMatrix;
+    }
+
     // Here you load and setup all your Vulkan Models and Texutures.
-    // Here you also create your Descriptor set layouts and load the shaders for the pipelines
+    // Here you also create your Descriptor set layouts and load the shaders for the pipeline
     void localInit()
     {
         currentFov = baseFov;
@@ -618,6 +653,17 @@ protected:
             std::cout << "ERROR LOADING THE SCENE\n";
             exit(0);
         }
+        // Popola il vettore delle istanze degli alberi
+        const int SIMP_TECH_INDEX = 0; // L'indice della tecnica per aereo e alberi
+        for (int i = 0; i < SC.TI[SIMP_TECH_INDEX].InstanceCount; ++i) {
+            // Controlla se il puntatore id non è nullo e se la stringa a cui punta inizia con "Tree"
+            if (SC.TI[SIMP_TECH_INDEX].I[i].id != nullptr && SC.TI[SIMP_TECH_INDEX].I[i].id->rfind("Tree", 0) == 0) {
+                treeInstances.push_back({SIMP_TECH_INDEX, i});
+            }
+        }
+
+        std::cout << "Found " << treeInstances.size() << " tree instances.\n";
+
 
         // Cerca l'indice della tecnica e dell'istanza dell'aereo e del pavimento
         for (int i = 0; i < PRs.size(); i++)
@@ -730,6 +776,7 @@ protected:
                                glm::vec3(distX(rng), distY(rng), distZ(rng)))
                 * glm::scale(glm::mat4(1.0f), glm::vec3(0.f));
         }
+
 
         audioInit();
 
@@ -1211,6 +1258,7 @@ protected:
             SC.TI[GEM_TECH_INDEX].I[inst_idx].DS[0][0]->map(currentImage, &gubo, 0);
             SC.TI[GEM_TECH_INDEX].I[inst_idx].DS[0][1]->map(currentImage, &uboGem, 0);
         }
+
 
         if (SC.TI[SKY_TECH_INDEX].InstanceCount > 0)
         {
@@ -1882,6 +1930,24 @@ protected:
 
     void GameLogic()
     {
+        std::cout<<treeInstances[0].instIdx<<std::endl;
+        std::cout<<treeInstances[0].techIdx<<std::endl;
+        for (const auto& tree : treeInstances)
+        {
+            // Ottieni la matrice del mondo dell'albero corrente
+            glm::mat4 treeWorldMatrix = SC.TI[tree.techIdx].I[tree.instIdx].Wm;
+            // Estrai la posizione dell'albero dalla matrice
+            glm::vec3 treePos = glm::vec3(treeWorldMatrix[3]);
+
+            // Calcola la distanza tra l'albero e l'aereo
+            float distance = glm::distance(treePos, airplanePosition);
+
+            // Se l'albero è troppo lontano, riposizionalo
+            if (distance > TREE_DESPAWN_RADIUS)
+            {
+                resetTreePosition(tree, airplanePosition);
+            }
+        }
         for (int i = 0; i < gemWorlds.size(); i++)
         {
             auto gemPos = glm::vec3(gemWorlds[i][3]);
