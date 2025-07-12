@@ -808,13 +808,12 @@ protected:
                 }
             );
         }
-
         treeWorld.resize(16);
         for (auto& M : treeWorld)
         {
             auto X = distX(rng);
-            auto Y = distY(rng);
             auto Z = distZ(rng);
+            auto Y = terrain.sampleHeight(X, Z);
             M =
                 glm::translate(glm::mat4(1.0f),
                                glm::vec3(X, Y, Z));
@@ -1703,9 +1702,11 @@ protected:
                 }
                 else if (currentCameraMode == FIRST_PERSON)
                 {
-                    cameraOffset = glm::vec3(-0.5f, 0.5f, 0.0f);
+                    cameraOffset = glm::vec3(-1.5f, 2.0f, 0.0f);
                     glm::vec3 forwardDirection = airplaneOrientation * glm::vec3(-1.0f, 0.0f, 0.0f);
-                    targetCameraLookAt = airplanePosition + (airplaneOrientation * cameraOffset) + forwardDirection;
+                    //targetCameraLookAt = airplanePosition + (airplaneOrientation * cameraOffset) + forwardDirection;
+                    targetCameraLookAt = airplanePosition + airplaneOrientation * cameraOffset + forwardDirection;
+                    cameraLookAt = targetCameraLookAt;
                 }
                 else
                 {
@@ -1715,7 +1716,7 @@ protected:
 
                 targetCameraPos = airplanePosition + (airplaneOrientation * cameraOffset);
 
-                const float CAMERA_SMOOTHING = 5.0f;
+                const float CAMERA_SMOOTHING = 10.0f;
                 float cameraInterpFactor = 1.0f - glm::exp(-CAMERA_SMOOTHING * deltaT);
                 cameraPos = glm::mix(cameraPos, targetCameraPos, cameraInterpFactor);
                 cameraLookAt = glm::mix(cameraLookAt, targetCameraLookAt, cameraInterpFactor);
@@ -1730,7 +1731,7 @@ protected:
                         noise.GetNoise(noiseOffset, 20.0f) * shakeIntensity
                     );
                     targetShakeOffset = finalOrientation * localShake;
-                    const float thrustMagnitude = thrustCoefficient * speed * 30.0f; // tune this
+                    const float thrustMagnitude = thrustCoefficient * speed * 3.0f; // tune this
                     dReal fx = thrustMagnitude;
                     dReal fy = 0;
                     dReal fz = 0;
