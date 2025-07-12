@@ -79,64 +79,10 @@ struct skyBoxUniformBufferObject
     alignas(16) glm::mat4 mvpMat;
 };
 
-struct TerrainHeightmap {
-    float minX, minZ;       // World-space origin of terrain grid
-    float cellW, cellD;     // Width and depth of each cell
-    int W, D;               // Grid resolution: number of samples along width and depth
-    std::vector<float> heights; // Flattened heightmap (row-major order)
 
-    // Initializes the heightmap
-    void init(int widthSamples, int depthSamples,
-              float cellWidth, float cellDepth,
-              float worldOriginX, float worldOriginZ,
-              std::function<float(float, float)> heightFunc)
-    {
-        W = widthSamples;
-        D = depthSamples;
-        cellW = cellWidth;
-        cellD = cellDepth;
-        minX = worldOriginX;
-        minZ = worldOriginZ;
-
-        heights.resize(W * D);
-        for (int z = 0; z < D; ++z) {
-            for (int x = 0; x < W; ++x) {
-                float worldX = minX + x * cellW;
-                float worldZ = minZ + z * cellD;
-                heights[z * W + x] = heightFunc(worldX, worldZ);
-            }
-        }
-    }
-
-    // Sample height at world-space coordinates (with bilinear interpolation)
-    float sampleHeight(float x, float z) const {
-        float fx = (x - minX) / cellW;
-        float fz = (z - minZ) / cellD;
-
-        fx = std::clamp(fx, 0.0f, float(W - 1));
-        fz = std::clamp(fz, 0.0f, float(D - 1));
-
-        int ix = int(floor(fx));
-        int iz = int(floor(fz));
-        int ix1 = std::min(ix + 1, W - 1);
-        int iz1 = std::min(iz + 1, D - 1);
-
-        float tx = fx - ix;
-        float tz = fz - iz;
-
-        float h00 = heights[ iz  * W + ix  ];
-        float h10 = heights[ iz  * W + ix1 ];
-        float h01 = heights[ iz1 * W + ix  ];
-        float h11 = heights[ iz1 * W + ix1 ];
-
-        float h0 = glm::mix(h00, h10, tx);
-        float h1 = glm::mix(h01, h11, tx);
-        return glm::mix(h0, h1, tz) * cellW;
-    }
-};
 
 // MAIN !
-class E09 : public BaseProject
+class CG_Exam : public BaseProject
 {
 protected:
     enum CameraMode { FIRST_PERSON, THIRD_PERSON };
@@ -145,9 +91,8 @@ protected:
     float orthoZoom = 20.0f;
 
 
-    // Nuova macchina a stati per il comportamento dell'aereo
+    bool changeTangents = true;
 
-    // Costanti per il nuovo modello di volo
     CameraMode currentCameraMode = THIRD_PERSON;
     // Here you list all the Vulkan objects you need:
 
@@ -161,15 +106,11 @@ protected:
     VertexDescriptor VDtan;
     RenderPass RP;
     Pipeline PsimpObj, PskyBox, P_PBR, Pgem;
-    //*DBG*/Pipeline PDebug;
 
     // Models, textures and Descriptors (values assigned to the uniforms)
     Scene SC;
     std::vector<VertexDescriptorRef> VDRs;
     std::vector<TechniqueRef> PRs;
-    //*DBG*/Model MS;
-    //*DBG*/DescriptorSet SSD;
-
 
     // to provide textual feedback
     TextMaker txt;
@@ -228,6 +169,9 @@ protected:
     std::uniform_real_distribution<float> distY;
     std::uniform_real_distribution<float> distZ;
 
+    std::uniform_real_distribution<float> treeX;
+    std::uniform_real_distribution<float> treeZ;
+
     // Indici per l'aereo
     int airplaneTechIdx = -1;
     int airplaneInstIdx = -1;
@@ -261,16 +205,14 @@ protected:
     std::vector<dReal> triVertices = {};
     std::vector<uint32_t> triIndices = {};
     dTriMeshDataID meshData = nullptr;
-    TerrainHeightmap terrain = {};
 
     const int HF_ROWS = 256;
     const int HF_COLS = 256;
     const float CELL_SIZE = 0.1f;           // world‑space spacing between samples
     const float NOISE_SCALE = 0.004f;       // noise frequency
     const float HEIGHT_SCALE = 0.05f;       // noise amplitude
-    std::vector<float> heightSamples; // height samples for the heightfield
+    std::vector<float> heightSamples;
 
-    // 1) create the data object & the geom once:
     dHeightfieldDataID hfData = dGeomHeightfieldDataCreate();
     dGeomID            groundHF = nullptr;
     void rebuildHeightSamples(float worldX, float worldZ, float scale){
@@ -717,6 +659,9 @@ protected:
         distY = std::uniform_real_distribution<float>(10.0f, 80.0f);
         distZ = std::uniform_real_distribution<float>(-100.0f, 100.0f);
 
+        treeX = std::uniform_real_distribution<float>(-500.0f, 500.0f);
+        treeZ = std::uniform_real_distribution<float>(-500.0f, 500.0f);
+
         noise.SetSeed(1337);
         noise.SetNoiseType(FastNoise::Perlin);
 
@@ -779,45 +724,13 @@ protected:
             size_t byteSize = ground->vertices.size();  // bytes of your interleaved array
             ground->initDynamicVertexBuffer(this /* your BaseProject ptr */, byteSize);
             ground->updateVertexBuffer();
-
-
-            int totalVerts = rawVB_original.size() / ground->VD->Bindings[0].stride;
-            int widthSamples = sqrt(totalVerts);      // assuming square grid
-            int depthSamples = widthSamples;
-
-
-            glm::vec3 scale;
-            scale.x = glm::length(glm::vec3(groundBaseWm[0]));
-            scale.y = glm::length(glm::vec3(groundBaseWm[1]));
-            scale.z = glm::length(glm::vec3(groundBaseWm[2]));
-
-            float meshWidth  = scale.x * (widthSamples - 1);  // world size in X
-            float meshDepth  = scale.z * (depthSamples - 1);  // world size in Z
-
-            float cellW = meshWidth / (widthSamples - 1);
-            float cellD = meshDepth / (depthSamples - 1);
-
-            std::cout << "Ground mesh size: " << meshWidth << " x " << meshDepth << "\n";
-            std::cout << "Ground mesh samples: " << widthSamples << " x " << depthSamples << "\n";
-            std::cout << "Ground mesh cell size: " << cellW << " x " << cellD << "\n";
-            terrain.init(
-                widthSamples,
-                depthSamples,
-                cellW,
-                cellD,
-                airplanePosition.x - meshWidth * 0.5f,
-                airplanePosition.z - meshDepth * 0.5f,
-                [this](float x, float z) {
-                    return noiseGround.GetNoise(x * 0.004f, z * 0.004f) * 0.05f;
-                }
-            );
         }
-        treeWorld.resize(16);
+        treeWorld.resize(30);
         for (auto& M : treeWorld)
         {
-            auto X = distX(rng);
-            auto Z = distZ(rng);
-            auto Y = terrain.sampleHeight(X, Z);
+            auto X = treeX(rng);
+            auto Z = treeZ(rng);
+            auto Y = noiseGround.GetNoise(X * 0.004f, Z * 0.004f) * 0.05f * 500;
             M =
                 glm::translate(glm::mat4(1.0f),
                                glm::vec3(X, Y, Z));
@@ -899,7 +812,7 @@ protected:
         // Simple trick to avoid having always 'T->'
         // in che code that populates the command buffer!
         std::cout << "Populating command buffer for " << currentImage << "\n";
-        E09* T = (E09*)Params;
+        CG_Exam* T = (CG_Exam*)Params;
         T->populateCommandBuffer(commandBuffer, currentImage);
     }
 
@@ -954,99 +867,79 @@ protected:
 
             }
             // ------- Normal, tangent and bi-tanget modification -------
+            if (changeTangents) {
+                // 1) Allocate accumulators
+                size_t vertexCount = rawVB.size() / stride;
+                std::vector<glm::vec3> nAccum(vertexCount, glm::vec3(0.0f));
+                std::vector<glm::vec3> tAccum(vertexCount, glm::vec3(0.0f));
+                std::vector<glm::vec3> bAccum(vertexCount, glm::vec3(0.0f));
 
-            // 1) Allocate accumulators
-            size_t vertexCount = rawVB.size() / stride;
-            std::vector<glm::vec3> nAccum(vertexCount, glm::vec3(0.0f));
-            std::vector<glm::vec3> tAccum(vertexCount, glm::vec3(0.0f));
-            std::vector<glm::vec3> bAccum(vertexCount, glm::vec3(0.0f));
+                // 2) Loop over every triangle to accumulate normals & tangents
+                for (size_t tri = 0; tri < ground->indices.size(); tri += 3) {
+                    uint32_t i0 = ground->indices[tri + 0];
+                    uint32_t i1 = ground->indices[tri + 1];
+                    uint32_t i2 = ground->indices[tri + 2];
 
-            // 2) Loop over every triangle to accumulate normals & tangents
-            for (size_t tri = 0; tri < ground->indices.size(); tri += 3) {
-                uint32_t i0 = ground->indices[tri + 0];
-                uint32_t i1 = ground->indices[tri + 1];
-                uint32_t i2 = ground->indices[tri + 2];
+                    // read positions
+                    auto p0 = reinterpret_cast<glm::vec3*>(&rawVB[i0*stride + posOffset]);
+                    auto p1 = reinterpret_cast<glm::vec3*>(&rawVB[i1*stride + posOffset]);
+                    auto p2 = reinterpret_cast<glm::vec3*>(&rawVB[i2*stride + posOffset]);
 
-                // read positions
-                auto p0 = reinterpret_cast<glm::vec3*>(&rawVB[i0*stride + posOffset]);
-                auto p1 = reinterpret_cast<glm::vec3*>(&rawVB[i1*stride + posOffset]);
-                auto p2 = reinterpret_cast<glm::vec3*>(&rawVB[i2*stride + posOffset]);
+                    glm::vec3 P0 = *p0, P1 = *p1, P2 = *p2;
 
-                glm::vec3 P0 = *p0, P1 = *p1, P2 = *p2;
+                    // read UVs
+                    auto uv0 = reinterpret_cast<glm::vec2*>(&rawVB[i0*stride + ground->VD->UV.offset]);
+                    auto uv1 = reinterpret_cast<glm::vec2*>(&rawVB[i1*stride + ground->VD->UV.offset]);
+                    auto uv2 = reinterpret_cast<glm::vec2*>(&rawVB[i2*stride + ground->VD->UV.offset]);
 
-                // read UVs
-                auto uv0 = reinterpret_cast<glm::vec2*>(&rawVB[i0*stride + ground->VD->UV.offset]);
-                auto uv1 = reinterpret_cast<glm::vec2*>(&rawVB[i1*stride + ground->VD->UV.offset]);
-                auto uv2 = reinterpret_cast<glm::vec2*>(&rawVB[i2*stride + ground->VD->UV.offset]);
+                    glm::vec2 UV0 = *uv0, UV1 = *uv1, UV2 = *uv2;
 
-                glm::vec2 UV0 = *uv0, UV1 = *uv1, UV2 = *uv2;
+                    // face normal
+                    glm::vec3 edge1 = P1 - P0;
+                    glm::vec3 edge2 = P2 - P0;
+                    glm::vec3 faceN = glm::normalize(glm::cross(edge1, edge2));
 
-                // face normal
-                glm::vec3 edge1 = P1 - P0;
-                glm::vec3 edge2 = P2 - P0;
-                glm::vec3 faceN = glm::normalize(glm::cross(edge1, edge2));
+                    // accumulate
+                    nAccum[i0] += faceN;
+                    nAccum[i1] += faceN;
+                    nAccum[i2] += faceN;
 
-                // accumulate
-                nAccum[i0] += faceN;
-                nAccum[i1] += faceN;
-                nAccum[i2] += faceN;
+                    // compute tangent & bitangent
+                    glm::vec2 dUV1 = UV1 - UV0;
+                    glm::vec2 dUV2 = UV2 - UV0;
+                    float r = 1.0f / (dUV1.x * dUV2.y - dUV2.x * dUV1.y);
+                    glm::vec3 tangent = (edge1 * dUV2.y - edge2 * dUV1.y) * r;
+                    glm::vec3 bitan   = (edge2 * dUV1.x - edge1 * dUV2.x) * r;
 
-                // compute tangent & bitangent
-                glm::vec2 dUV1 = UV1 - UV0;
-                glm::vec2 dUV2 = UV2 - UV0;
-                float r = 1.0f / (dUV1.x * dUV2.y - dUV2.x * dUV1.y);
-                glm::vec3 tangent = (edge1 * dUV2.y - edge2 * dUV1.y) * r;
-                glm::vec3 bitan   = (edge2 * dUV1.x - edge1 * dUV2.x) * r;
+                    tAccum[i0] += tangent;  bAccum[i0] += bitan;
+                    tAccum[i1] += tangent;  bAccum[i1] += bitan;
+                    tAccum[i2] += tangent;  bAccum[i2] += bitan;
+                }
 
-                tAccum[i0] += tangent;  bAccum[i0] += bitan;
-                tAccum[i1] += tangent;  bAccum[i1] += bitan;
-                tAccum[i2] += tangent;  bAccum[i2] += bitan;
-            }
+                // 3) Orthonormalize per-vertex and write back into rawVB
+                for (size_t vi = 0; vi < vertexCount; ++vi) {
+                    // normalize accumulated normal
+                    glm::vec3 n = glm::normalize(nAccum[vi]);
 
-            // 3) Orthonormalize per-vertex and write back into rawVB
-            for (size_t vi = 0; vi < vertexCount; ++vi) {
-                // normalize accumulated normal
-                glm::vec3 n = glm::normalize(nAccum[vi]);
+                    // Gram‑Schmidt tangent
+                    glm::vec3 t = tAccum[vi];
+                    t = glm::normalize(t - n * glm::dot(n, t));
 
-                // Gram‑Schmidt tangent
-                glm::vec3 t = tAccum[vi];
-                t = glm::normalize(t - n * glm::dot(n, t));
+                    // handedness
+                    float h = (glm::dot(glm::cross(n, t), bAccum[vi]) < 0.0f) ? -1.0f : +1.0f;
 
-                // handedness
-                float h = (glm::dot(glm::cross(n, t), bAccum[vi]) < 0.0f) ? -1.0f : +1.0f;
+                    // write back
+                    auto dstN = reinterpret_cast<glm::vec3*>(&rawVB[vi*stride + ground->VD->Normal.offset]);
+                    *dstN = n;
 
-                // write back
-                auto dstN = reinterpret_cast<glm::vec3*>(&rawVB[vi*stride + ground->VD->Normal.offset]);
-                *dstN = n;
+                    auto dstT = reinterpret_cast<glm::vec4*>(&rawVB[vi*stride + ground->VD->Tangent.offset]);
+                    *dstT = glm::vec4(t, h);
+                }
 
-                auto dstT = reinterpret_cast<glm::vec4*>(&rawVB[vi*stride + ground->VD->Tangent.offset]);
-                *dstT = glm::vec4(t, h);
             }
 
             // ---------------------------------------------------
             ground->updateVertexBuffer();
-
-            int totalVerts = rawVB_original.size() / stride;
-            int widthSamples = sqrt(totalVerts);      // assuming square grid
-            int depthSamples = widthSamples;
-
-            float meshWidth  = scale.x * (widthSamples - 1);  // world size in X
-            float meshDepth  = scale.z * (depthSamples - 1);  // world size in Z
-
-            float cellW = meshWidth / (widthSamples - 1);
-            float cellD = meshDepth / (depthSamples - 1);
-
-            terrain.init(
-                widthSamples,
-                depthSamples,
-                cellW,
-                cellD,
-                airplanePosition.x - meshWidth * 0.5f,
-                airplanePosition.z - meshDepth * 0.5f,
-                [this](float x, float z) {
-                    return noiseGround.GetNoise(x * 0.004f, z * 0.004f) * 0.05f;
-                }
-            );
         }
         updateGroundHeightfield(glm::length(glm::vec3(groundBaseWm[1])));
     }
@@ -1061,7 +954,7 @@ protected:
     // Callback per le collisioni
     static void nearCallback(void* data, dGeomID o1, dGeomID o2)
     {
-        E09* app = (E09*)data; // Recupera il puntatore all'applicazione
+        CG_Exam* app = (CG_Exam*)data; // Recupera il puntatore all'applicazione
 
         dBodyID b1 = dGeomGetBody(o1);
         dBodyID b2 = dGeomGetBody(o2);
@@ -1079,8 +972,8 @@ protected:
             for (int i = 0; i < numc; i++)
             {
                 contact[i].surface.mode = dContactBounce | dContactSoftCFM;
-                contact[i].surface.mu = 0.9; // Attrito
-                contact[i].surface.bounce = 0.0; // Rimbalzo
+                contact[i].surface.mu = 50.f; // Attrito
+                contact[i].surface.bounce = 0.f; // Rimbalzo
                 contact[i].surface.bounce_vel = 0.0;
                 contact[i].surface.soft_cfm = 0.001;
 
@@ -1138,6 +1031,11 @@ protected:
             if (isEngineOn) targetSpinVelocity = maxSpinVelocity;
             else targetSpinVelocity = minSpinVelocity;
             std::cout << "Engine state: " << (isEngineOn ? "ON" : "OFF") << "\n";
+        }
+
+        if (handleDebouncedKeyPress(GLFW_KEY_U))
+        {
+            changeTangents = !changeTangents;
         }
     }
 
@@ -1802,6 +1700,8 @@ protected:
                 }
 
                 ViewPrj = projectionMatrix * viewMatrix;
+
+                updateTreePositions();
             }
             GameLogic();
         }
@@ -1936,7 +1836,6 @@ protected:
 
         updateState(deltaT);
         updateEngineAudio(deltaT);
-
     }
 
 
@@ -1972,7 +1871,7 @@ protected:
             auto& M = gemWorlds[i];
             auto xRandom = distX(rng);
             auto zRandom = distZ(rng);
-            auto yRandom = distY(rng) + terrain.sampleHeight(xRandom, zRandom);
+            auto yRandom = distY(rng) + sampleHeight(xRandom, zRandom);
             M = glm::translate(glm::mat4(1.0f), {xRandom, yRandom, zRandom}) * glm::scale(
                 glm::mat4(1.0f), glm::vec3(gemScale));
 
@@ -1988,33 +1887,6 @@ protected:
                           {0.0f, 0.0f, 0.0f, 1.0f}, {1.f, 1.f, 1.f, 1.0f});
     }
 
-    // void initGroundCollision()
-    // {
-    //     size_t stride    = ground->VD->Bindings[0].stride;
-    //     size_t posOffset = ground->VD->Position.offset;  // byte‑offset in each vertex
-    //     // 1) build triVertices & triIndices from your rawVB_original / ground->indices:
-    //     triVertices.reserve(rawVB_original.size() / stride * 3);
-    //     triIndices   = ground->indices;                // copy once
-    //
-    //     for (size_t i = 0; i < rawVB_original.size(); i += stride) {
-    //         glm::vec3* p = reinterpret_cast<glm::vec3*>(&rawVB_original[i + posOffset]);
-    //         triVertices.push_back(p->x);
-    //         triVertices.push_back(0.0f);  // start flat
-    //         triVertices.push_back(p->z);
-    //     }
-    //
-    //     // 2) create and build the meshData
-    //     meshData = dGeomTriMeshDataCreate();
-    //     dGeomTriMeshDataBuildSimple(
-    //       meshData,
-    //       triVertices.data(),  triVertices.size()/3,
-    //       triIndices.data(),   triIndices.size()/3
-    //     );
-    //
-    //     // 3) make a single trimesh geom
-    //     // odeGroundPlane = dCreateTriMesh(odeSpace, meshData,
-    //                                     // nullptr, nullptr, nullptr);
-    // }
 
     void audioInit()
     {
@@ -2086,8 +1958,29 @@ protected:
         alSourcef(gemCollectedSource, AL_GAIN, gemCollectedGain);
         alSourcei(gemCollectedSource, AL_SOURCE_RELATIVE, AL_TRUE);
         alSource3f(gemCollectedSource, AL_POSITION, 0.0f, 0.0f, 0.0f);
+    }
 
+    float sampleHeight(float x, float z)
+    {
+        // Sample the terrain height at (x, z) using the noise function
+        return noiseGround.GetNoise(x * 0.004f, z * 0.004f) * 0.05f * 500;
+    }
 
+    void updateTreePositions()
+    {
+        float distance = 500.f;
+        for (auto & M : treeWorld)
+        {
+            // extract translation from the matrix
+            float x = M[3][0];
+            float z = M[3][2];
+            if (x < airplanePosition.x - distance) x += distance * 2.f;
+            if (x > airplanePosition.x + distance) x -= distance * 2.f;
+            if (z < airplanePosition.z - distance) z += distance * 2.f;
+            if (z > airplanePosition.z + distance) z -= distance * 2.f;
+            float yNew = sampleHeight(x, z);
+            M = glm::translate(glm::mat4(1.0f), {x, yNew, z});
+        }
     }
 
     void audioCleanUp()
@@ -2184,7 +2077,7 @@ protected:
 private:
     static void scroll_callback(GLFWwindow* window, double xoffset, double yoffset)
     {
-        E09* app = (E09*)glfwGetWindowUserPointer(window);
+        CG_Exam* app = (CG_Exam*)glfwGetWindowUserPointer(window);
         if (app)
         {
             app->handleMouseScroll(yoffset);
@@ -2196,7 +2089,7 @@ private:
 // This is the main: probably you do not need to touch this!
 int main()
 {
-    E09 app;
+    CG_Exam app;
 
     try
     {
