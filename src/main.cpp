@@ -140,6 +140,10 @@ class E09 : public BaseProject
 {
 protected:
     enum CameraMode { FIRST_PERSON, THIRD_PERSON };
+    enum ProjectionMode { PERSPECTIVE, ORTHOGRAPHIC, ISOMETRIC };
+    ProjectionMode currentProjectionMode = PERSPECTIVE;
+    float orthoZoom = 20.0f;
+
 
     // Nuova macchina a stati per il comportamento dell'aereo
 
@@ -1115,6 +1119,10 @@ protected:
         }
         if (handleDebouncedKeyPress(GLFW_KEY_1)) currentCameraMode = FIRST_PERSON;
         if (handleDebouncedKeyPress(GLFW_KEY_2)) currentCameraMode = THIRD_PERSON;
+        if (handleDebouncedKeyPress(GLFW_KEY_F1)) currentProjectionMode = PERSPECTIVE;
+        if (handleDebouncedKeyPress(GLFW_KEY_F2)) currentProjectionMode = ORTHOGRAPHIC;
+        if (handleDebouncedKeyPress(GLFW_KEY_F3)) currentProjectionMode = ISOMETRIC;
+
         if (handleDebouncedKeyPress(GLFW_KEY_H))
         {
             if (gameState == PLAYING)
@@ -1229,6 +1237,7 @@ protected:
             skyBoxUniformBufferObject sbubo{};
             sbubo.mvpMat = ViewPrj * glm::translate(glm::mat4(1), cameraPos) * glm::scale(
                 glm::mat4(1), glm::vec3(100.0f));
+
             SC.TI[SKY_TECH_INDEX].I[0].DS[0][0]->map(currentImage, &sbubo, 0);
         }
 
@@ -1311,7 +1320,6 @@ protected:
                 cos(menuCameraAngle) * CAMERA_DISTANCE
             );
             cameraPos = airplanePosition + cameraOffset;
-
             cameraLookAt = airplanePosition;
             ViewPrj = glm::perspective(currentFov, Ar, 1.f, 500.0f);
             glm::mat4 projectionMatrix = glm::perspective(currentFov, Ar, 1.f, 500.f);
@@ -1702,7 +1710,7 @@ protected:
                 }
                 else if (currentCameraMode == FIRST_PERSON)
                 {
-                    cameraOffset = glm::vec3(-1.5f, 2.0f, 0.0f);
+                    cameraOffset = glm::vec3(-2.5f, 2.0f, 0.0f);
                     glm::vec3 forwardDirection = airplaneOrientation * glm::vec3(-1.0f, 0.0f, 0.0f);
                     //targetCameraLookAt = airplanePosition + (airplaneOrientation * cameraOffset) + forwardDirection;
                     targetCameraLookAt = airplanePosition + airplaneOrientation * cameraOffset + forwardDirection;
@@ -1755,7 +1763,45 @@ protected:
 
                 // FIX: L'asse "up" della camera deve seguire il rollio dell'aereo per evitare scatti
                 glm::vec3 cameraUp = glm::normalize(airplaneOrientation * glm::vec3(0.0f, 1.0f, 0.0f));
-                viewMatrix = glm::lookAt(finalCameraPos, cameraLookAt, cameraUp);
+                //viewMatrix = glm::lookAt(finalCameraPos, cameraLookAt, cameraUp);
+
+                glm::mat4 projectionMatrix;
+                switch (currentProjectionMode) {
+                case ORTHOGRAPHIC:
+                    {
+                        float halfWidth = orthoZoom * Ar;
+                        float halfHeight = orthoZoom;
+                        projectionMatrix = glm::ortho(-halfWidth, halfWidth, -halfHeight, halfHeight, -500.f, 500.f);
+                        break;
+                    }
+                case ISOMETRIC:
+                    {
+                        float halfWidth = orthoZoom * Ar;
+                        float halfHeight = orthoZoom;
+                        projectionMatrix = glm::ortho(-halfWidth, halfWidth, -halfHeight, halfHeight, -500.f, 500.f);
+                        break;
+                    }
+                case PERSPECTIVE:
+                default:
+                    {
+                        projectionMatrix = glm::perspective(currentFov, Ar, 1.f, 500.f);
+                        break;
+                    }
+                }
+
+                projectionMatrix[1][1] *= -1; // Correzione per Vulkan
+
+                // La logica della viewMatrix rimane quasi invariata, ma per l'isometrica va forzata
+                if (currentProjectionMode == ISOMETRIC) {
+                    //glm::vec3 isoCameraPos = airplanePosition + glm::vec3(30.0f, 30.0f, 30.0f);
+                    const float isoDistance = 40.0f;
+                    glm::vec3 isoCameraPos = airplanePosition + glm::vec3(isoDistance, isoDistance, isoDistance);
+                    viewMatrix = glm::lookAt(isoCameraPos, airplanePosition, glm::vec3(0.0f, 1.0f, 0.0f));
+                } else {
+                    viewMatrix = glm::lookAt(finalCameraPos, cameraLookAt, cameraUp);
+                }
+
+                ViewPrj = projectionMatrix * viewMatrix;
             }
             GameLogic();
         }
