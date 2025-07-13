@@ -719,7 +719,7 @@ protected:
             ground->initDynamicVertexBuffer(this /* your BaseProject ptr */, byteSize);
             ground->updateVertexBuffer();
         }
-        treeWorld.resize(30);
+        treeWorld.resize(88);
         for (auto& M : treeWorld)
         {
             auto X = treeX(rng);
@@ -1256,7 +1256,7 @@ protected:
 
 
             float targetFov = baseFov;
-            if (isBoosting && currentCameraMode == THIRD_PERSON)
+            if (isBoosting && currentCameraMode == THIRD_PERSON && isEngineOn)
             {
                 targetFov += boostFovIncrease;
             }
@@ -1600,7 +1600,7 @@ protected:
                 cameraLookAt = glm::mix(cameraLookAt, targetCameraLookAt, cameraInterpFactor);
 
                 glm::vec3 targetShakeOffset = glm::vec3(0.0f);
-                if (isBoosting)
+                if (isBoosting && isEngineOn)
                 {
                     noiseOffset += deltaT * shakeSpeed;
                     glm::vec3 localShake = glm::vec3(
