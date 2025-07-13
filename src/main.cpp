@@ -79,7 +79,7 @@ struct skyBoxUniformBufferObject
     alignas(16) glm::mat4 mvpMat;
 };
 
-
+static std::vector<dJointFeedback*> jointFeedbacks;
 
 // MAIN !
 class CG_Exam : public BaseProject
@@ -194,6 +194,8 @@ protected:
     float dragCoefficient = 1.0f;
     const float maxSpeed = 20.0f; // m/s, tune to your liking
     glm::vec3 currentShakeOffset = glm::vec3(0.0f);
+    float crashThreshold = 6000.f;
+    bool hardImpact = false;
 
     dWorldID odeWorld = nullptr;
     dSpaceID odeSpace = nullptr;
@@ -649,7 +651,7 @@ protected:
 
         // Prepares for showing the FPS count
         txt.print(1.0f, 1.0f, "FPS:", FPS, "CO", false, false, true, TAL_RIGHT, TRH_RIGHT, TRV_BOTTOM,
-                  {1.0f, 0.0f, 0.0f, 1.0f}, {0.8f, 0.8f, 0.0f, 1.0f});
+                  {1.0f, 0.0f, 0.0f, 1.0f}, {0.8f, 0.8f, 0.0f, 1.0f}, {0, 0, 0, 1});
 
         // Adding randomisation of gems
         std::random_device rd;
@@ -802,6 +804,10 @@ protected:
         txt.localCleanup();
 
         audioCleanUp();
+
+        for (auto fb : jointFeedbacks) delete fb;
+        jointFeedbacks.clear();
+
     }
 
     // Here it is the creation of the command buffer:
@@ -962,7 +968,7 @@ protected:
         // Ignora collisioni tra oggetti statici
         if (b1 && b2 && dBodyIsKinematic(b1) && dBodyIsKinematic(b2)) return;
 
-        const int MAX_CONTACTS = 10; // Massimo numero di punti di contatto
+        const int MAX_CONTACTS = 5; // Massimo numero di punti di contatto
         dContact contact[MAX_CONTACTS];
 
         int numc = dCollide(o1, o2, MAX_CONTACTS, &contact[0].geom, sizeof(dContact));
@@ -979,6 +985,11 @@ protected:
 
                 dJointID c = dJointCreateContact(app->odeWorld, app->contactgroup, &contact[i]);
                 dJointAttach(c, b1, b2);
+
+                // allocate feedback struct on the heap (or reuse one per joint)
+                dJointFeedback* fb = new dJointFeedback();
+                jointFeedbacks.push_back(fb);
+                dJointSetFeedback(c, fb);
             }
         }
     }
@@ -1027,10 +1038,7 @@ protected:
 
         if (handleDebouncedKeyPress(GLFW_KEY_F))
         {
-            isEngineOn = !isEngineOn;
-            if (isEngineOn) targetSpinVelocity = maxSpinVelocity;
-            else targetSpinVelocity = minSpinVelocity;
-            std::cout << "Engine state: " << (isEngineOn ? "ON" : "OFF") << "\n";
+            toggleEngineState();
         }
 
         if (handleDebouncedKeyPress(GLFW_KEY_U))
@@ -1152,7 +1160,7 @@ protected:
             std::ostringstream oss;
             oss << "FPS: " << std::fixed << std::setprecision(1) << fps;
             txt.print(1.0f, 1.0f, oss.str(), FPS, "CO", false, false, true, TAL_RIGHT, TRH_RIGHT, TRV_BOTTOM,
-                      {1.0f, 0.0f, 0.0f, 1.0f}, {0.8f, 0.8f, 0.0f, 1.0f});
+                      {1.0f, 0.0f, 0.0f, 1.0f}, {0.8f, 0.8f, 0.0f, 1.0f}, {0, 0, 0, 1});
             elapsedT = 0.0f;
             countedFrames = 0;
         }
@@ -1277,7 +1285,7 @@ protected:
                     std::ostringstream oss;
                     oss << std::fixed << std::setprecision(0) << timerCountdown;
                     txt.print(0.f, -0.f, oss.str(), COUNTDOWN_TEXT, "CO", true, false, true, TAL_CENTER, TRH_CENTER, TRV_MIDDLE,
-                              {1, 1, 1, 1}, {0, 0, 0, 1}, {0, 0, 0, 0}, 2, 2);
+                              {1, 1, 1, 1}, {0, 0, 0, 1}, {0, 0, 0, 1}, 2, 2);
                 }
                 else
                 {
@@ -1302,7 +1310,7 @@ protected:
                         << std::setw(2) << std::setfill('0') << seconds;
 
                     // Visualizza il secondo timer (1 minuto) usando un ID diverso (es. 5)
-                    txt.print(0.5f, 0.5f, oss.str(), TIMER_TEXT, "CO", true, false, true, TAL_CENTER, TRH_CENTER);
+                    txt.print(0.5f, 0.5f, oss.str(), TIMER_TEXT, "CO", true, false, true, TAL_CENTER, TRH_CENTER, TRV_MIDDLE,{1, 1, 1, 1}, {0, 0, 0, 1}, {0, 0, 0, 1}, 1, 1);
                 }
                 else
                 {
@@ -1702,6 +1710,12 @@ protected:
                 ViewPrj = projectionMatrix * viewMatrix;
 
                 updateTreePositions();
+                collisionDetected();
+
+                for (auto &jf : jointFeedbacks) {
+                    delete jf;
+                }
+                jointFeedbacks.clear();
             }
             GameLogic();
         }
@@ -1742,17 +1756,25 @@ protected:
                 dSpaceCollide(odeSpace, this, &nearCallback);
                 dWorldStep(odeWorld, deltaT);
                 dJointGroupEmpty(contactgroup);
+                for (auto &jf : jointFeedbacks) {
+                    delete jf;
+                }
+                jointFeedbacks.clear();
+
 
                 // Aggiorna posizione e orientamento dell'aereo dal motore fisico
                 const dReal* pos = dBodyGetPosition(odeAirplaneBody);
                 const dReal* rot = dBodyGetQuaternion(odeAirplaneBody);
                 airplanePosition = glm::vec3(pos[0], pos[1], pos[2]);
                 airplaneOrientation = glm::quat(rot[0], rot[1], rot[2], rot[3]);
-                const float thrustMagnitude = thrustCoefficient * speed; // tune this
-                dReal fx = thrustMagnitude;
-                dReal fy = 0;
-                dReal fz = 0;
-                dBodyAddRelForce(odeAirplaneBody, -fx, fy, fz);
+                if (isEngineOn)
+                {
+                    const float thrustMagnitude = thrustCoefficient * speed; // tune this
+                    dReal fx = thrustMagnitude;
+                    dReal fy = 0;
+                    dReal fz = 0;
+                    dBodyAddRelForce(odeAirplaneBody, -fx, fy, fz);
+                }
 
                 // Aggiorna la matrice del modello dell'aereo
                 SC.TI[airplaneTechIdx].I[airplaneInstIdx].Wm =
@@ -1785,17 +1807,22 @@ protected:
 
             // Mostra il messaggio di fine gioco
             std::ostringstream oss;
-            if (gemsCollected == gemsToCollect) {
-                oss << "Hai raccolto tutte le gemme!";
+            if (!hardImpact) {
+                if (gemsCollected == gemsToCollect) {
+                    oss << "Hai raccolto tutte le gemme!";
+                }
+                else {
+                    oss << "Hai raccolto solo " << gemsCollected << " gemme su " << gemsToCollect << ". Hai perso!";
+                }
             }
             else {
-                oss << "Hai raccolto solo " << gemsCollected << " gemme su " << gemsToCollect << ". Hai perso!";
+                oss << "Ti sei schiantato!";
             }
 
             oss << "\nFine del gioco! Premi esc per uscire";
 
             txt.print(0.f, 0.f, oss.str(), GAME_OVER_TEXT, "SS", false, true, true, TAL_CENTER,
-                      TRH_CENTER, TRV_MIDDLE, {0, 0, 0, 1}, {0, 0, 0, 1}, {0, 0, 0, 0}, 1, 1);
+                      TRH_CENTER, TRV_MIDDLE, {1, 1, 1, 1}, {0, 0, 0, 1}, {0, 0, 0, 1}, 1, 1);
 
             // Aggiorna gli uniformi e il command buffer alla fine
             // updateUniforms(currentImage, deltaT);
@@ -1854,7 +1881,7 @@ protected:
                 std::ostringstream oss;
                 oss << "Gems collected: " << std::fixed << std::setprecision(1) << gemsCollected << "/" << gemWorlds.size();
                 txt.print(-1.0f, -1.0f, oss.str(), COLLECTED_GEMS_TEXT, "SS", false, false, true, TAL_LEFT, TRH_LEFT, TRV_TOP,
-                          {0.0f, 0.0f, 0.0f, 1.0f}, {1.f, 1.f, 1.f, 1.0f});
+                          {0.0f, 0.0f, 0.0f, 1.0f}, {1.f, 1.f, 1.f, 1.0f}, {0.0f, 0.0f, 0.0f, 1.0f});
                 alSourceStop(gemSources[i]);
                 alSourcePlay(gemCollectedSource);
             }
@@ -1884,9 +1911,36 @@ protected:
         std::ostringstream oss;
         oss << "Gems collected: " << std::fixed << std::setprecision(1) << gemsCollected << "/" << gemWorlds.size();
         txt.print(-1.0f, -1.0f, oss.str(), COLLECTED_GEMS_TEXT, "SS", false, false, true, TAL_LEFT, TRH_LEFT, TRV_TOP,
-                          {0.0f, 0.0f, 0.0f, 1.0f}, {1.f, 1.f, 1.f, 1.0f});
+                          {1.0f, 1.0f, 1.0f, 1.0f}, {0.f, 0.f, 0.f, 1.0f}, {0, 0, 0, 1});
     }
+    void toggleEngineState() {
+        isEngineOn = !isEngineOn;
+        if (isEngineOn) targetSpinVelocity = maxSpinVelocity;
+        else targetSpinVelocity = minSpinVelocity;
+        std::cout << "Engine state: " << (isEngineOn ? "ON" : "OFF") << "\n";
+    }
+    bool collisionDetected()
+    {
+        bool collision = false;
+        // after dWorldStep(odeWorld,...);
+        for (auto fb : jointFeedbacks) {
+            // fb->f1 is the force applied to body1 in world coords
+            // fb->f2 is the opposite force on body2
+            dVector3& F = fb->f1;
+            float magnitude = std::sqrt(F[0]*F[0] + F[1]*F[1] + F[2]*F[2]);
 
+            if (magnitude > crashThreshold) {
+                if (isEngineOn) toggleEngineState();
+                std::cout << "Hard impact! force = " << magnitude << "\n";
+                hardImpact = true;
+                gameState = GAME_OVER;
+            }
+            // reset for next frame
+            fb->f1[0]=fb->f1[1]=fb->f1[2]=0;
+            fb->t1[0]=fb->t1[1]=fb->t1[2]=0;
+        }
+        return collision;
+    }
 
     void audioInit()
     {
@@ -2084,7 +2138,6 @@ private:
         }
     }
 };
-
 
 // This is the main: probably you do not need to touch this!
 int main()
