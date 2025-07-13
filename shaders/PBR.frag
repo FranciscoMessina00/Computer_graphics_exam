@@ -11,15 +11,18 @@ layout(location = 0) out vec4 outColor;
 
 layout(binding = 1, set = 1) uniform sampler2D albedoMap;
 layout(binding = 2, set = 1) uniform sampler2D normalMap;
-layout(binding = 3, set = 1) uniform sampler2D occlusionMap;
-layout(binding = 4, set = 1) uniform sampler2D roughnessMap;
+layout(binding = 3, set = 1) uniform sampler2D groundOcclusionMap;
+layout(binding = 4, set = 1) uniform sampler2D groundRoughnessMap;
+layout(binding = 5, set = 1) uniform sampler2D waterMap;
+//layout(binding = 7, set = 1) uniform sampler2D waterOcclusionMap;
+//layout(binding = 8, set = 1) uniform sampler2D waterRoughnessMap;
 
 layout(binding = 0, set = 0) uniform GlobalUniformBufferObject {
     vec3 lightDir;
     vec4 lightColor;
     vec3 eyePos;
     vec3 airplanePos;
-    float height; // height of the ground at this fragment
+    vec4 otherParams; // ground height, waterLevel, shoreBlend, nothing
 } gubo;
 
 const float PI = 3.14159265359;
@@ -80,7 +83,7 @@ vec2 rotate2D(vec2 v, float theta) {
 void main() {
     // -------------- simple shadow
     // how high above the ground am I?
-    float hAbove = gubo.airplanePos.y - gubo.height;
+    float hAbove = gubo.airplanePos.y - gubo.otherParams.x; // ground height
 
     // project that point onto the ground plane, along the light‑direction:
     //   P + t·L  such that y == groundY
@@ -129,9 +132,23 @@ void main() {
     worldUV = uv;
     // --------------
 
-    vec3 albedo     = texture(albedoMap, worldUV).rgb;
-    float occlusion  = texture(occlusionMap, worldUV).r;
-    float roughness = texture(roughnessMap, worldUV).r * 0.5f;
+    float smoothing = smoothstep(
+        gubo.otherParams.y - gubo.otherParams.z * 0.5,
+        gubo.otherParams.y + gubo.otherParams.z * 0.5,
+        fragPos.y
+    );
+
+    vec3 groundColor = texture(albedoMap, worldUV).rgb;
+    vec3 waterColor  = texture(waterMap,  worldUV / 2).rgb;
+    vec3 albedo = mix(waterColor, groundColor, smoothing);
+
+//    float groundOcclusion = texture(groundOcclusionMap, worldUV).r;
+//    float waterOcclusion  = texture(waterOcclusionMap, worldUV / 2).r;
+    float occlusion  = texture(groundOcclusionMap, worldUV).r;
+
+//    float groundRoughness = texture(groundRoughnessMap, worldUV).r * 0.5f;
+//    float waterRoughness  = texture(waterRoughnessMap, worldUV / 2).r * 0.5f;
+    float roughness = texture(groundRoughnessMap, worldUV).r * 0.5f;
 
 
     vec3 N = normalize(fragNorm);

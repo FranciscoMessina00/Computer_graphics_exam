@@ -10,7 +10,7 @@
 	],
 	"textures": [
 		{"id": "pnois", "texture": "assets/textures/Perlin_noise.png", "format": "D"},
-		{"id": "skybox", "texture": "assets/textures/daybox.png", "format": "C"},
+		{"id": "skybox", "texture": "assets/textures/daybox_2.hdr", "format": "C"},
 		{"id": "ap", "texture": "assets/textures/airplane.jpg", "format": "C"},
 
 		{"id": "gem", "texture": "assets/textures/Gem01_Blue_Albedo.png", "format": "C"},
@@ -20,7 +20,9 @@
 		{"id": "GrassNm", "texture": "assets/textures/GrassTexture/grass_nm.jpg", "format": "D"},
 		{"id": "GrassOcclusion", "texture": "assets/textures/GrassTexture/grass_occlusion.jpg", "format": "D"},
 		{"id": "GrassRoughness", "texture": "assets/textures/GrassTexture/grass_roughness.jpg", "format": "D"},
-		{"id": "Tree", "texture": "assets/textures/Textures_Vegetation.png", "format": "D"}
+		{"id": "Tree", "texture": "assets/textures/Textures_Vegetation.png", "format": "C"},
+		{"id": "water", "texture": "assets/textures/water_albedo.jpg", "format": "C"}
+
 
 	],
 	"instances": [
@@ -183,7 +185,7 @@
 			{"id": "skybox",  "model": "skybox",   "texture": ["skybox"]}
 		]},
 		{"technique": "PBR", "elements": [
-			{"id": "2DplaneTan",  "model": "2DplaneTan",   "texture": ["GrassAlbedo", "GrassNm", "GrassOcclusion", "GrassRoughness"],
+			{"id": "2DplaneTan",  "model": "2DplaneTan",   "texture": ["GrassAlbedo", "GrassNm", "GrassOcclusion", "GrassRoughness", "water"],
 				"scale": [500, 500, 500]
 			}
 		]}

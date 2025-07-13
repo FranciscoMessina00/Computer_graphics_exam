@@ -56,7 +56,7 @@ struct GlobalUniformBufferGround
     alignas(16) glm::vec4 lightColor;
     alignas(16) glm::vec3 eyePos;
     alignas(16) glm::vec3 eyePosNoSmooth;
-    alignas(16) float groundHeight;
+    alignas(16) glm::vec4 otherParams;
 };
 
 struct UniformBufferObjectSimp
@@ -89,7 +89,6 @@ protected:
     enum ProjectionMode { PERSPECTIVE, ORTHOGRAPHIC, ISOMETRIC };
     ProjectionMode currentProjectionMode = PERSPECTIVE;
     float orthoZoom = 20.0f;
-
 
     bool changeTangents = true;
 
@@ -141,6 +140,7 @@ protected:
     float targetSpinVelocity = 5.f;
     const float maxSpinVelocity = 25.f;
     const float minSpinVelocity = 5.f;
+    float counterGlobal = 0.f;
 
     enum GameState { START_MENU, PLAYING, GAME_OVER };
     enum TextID { FPS,
@@ -159,7 +159,6 @@ protected:
     float currentFov = 0.f;
     FastNoise noise, noiseGround;
     std::vector<unsigned char> rawVB_original = {};
-    int counter = 0;
     float noiseOffset = 0.0f;
     float shakeIntensity = 0.2f;
     float shakeSpeed = 100.0f;
@@ -188,7 +187,6 @@ protected:
     bool airplaneInitialized = false;
     bool isEngineOn = false;
     bool isAirplaneOnGround = true;
-    float visualRollAngle = 0.0f;
     float thrustCoefficient = 200.0f; // Coefficiente di spinta
     float speed = 5.0f;
     float dragCoefficient = 1.0f;
@@ -196,17 +194,14 @@ protected:
     glm::vec3 currentShakeOffset = glm::vec3(0.0f);
     float crashThreshold = 6000.f;
     bool hardImpact = false;
+    bool isBoosting = false;
 
     dWorldID odeWorld = nullptr;
     dSpaceID odeSpace = nullptr;
     dBodyID odeAirplaneBody = nullptr;
     dGeomID odeAirplaneGeom = nullptr;
     dMass odeAirplaneMass = {};
-    // dGeomID odeGroundPlane = nullptr;
     dJointGroupID contactgroup = nullptr;
-    std::vector<dReal> triVertices = {};
-    std::vector<uint32_t> triIndices = {};
-    dTriMeshDataID meshData = nullptr;
 
     const int HF_ROWS = 256;
     const int HF_COLS = 256;
@@ -330,11 +325,6 @@ protected:
 
         dInitODE();
 
-
-        std::cout << "Init done!\n";
-        std::cout << "ODE Initialized successfully.\n";
-
-
         // Descriptor Layouts [what will be passed to the shaders]
         DSLglobal.init(this, {
                            // this array contains the binding:
@@ -404,7 +394,8 @@ protected:
                              {1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 0, 1},
                              {2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 1, 1},
                              {3, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 2, 1},
-                             {4, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 3, 1}
+                             {4, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 3, 1},
+                             {5, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 4, 1}
                          });
 
         VDsimp.init(this, {
@@ -546,11 +537,12 @@ protected:
                                     /*t0*/{true, 0, {}}, // index 0 of the "texture" field in the json file
                                     /*t1*/{true, 1, {}}, // index 1 of the "texture" field in the json file
                                     /*t2*/{true, 2, {}}, // index 2 of the "texture" field in the json file
-                                    /*t3*/{true, 3, {}} // index 3 of the "texture" field in the json file
+                                    /*t3*/{true, 3, {}}, // index 3 of the "texture" field in the json file
+                                    /*t3*/{true, 4, {}} // index 3 of the "texture" field in the json file
                                 }
                             }
                         }
-                    }, /*TotalNtextures*/4, &VDtan);
+                    }, /*TotalNtextures*/5, &VDtan);
 
 
         // Models, textures and Descriptors (values assigned to the uniforms)
@@ -740,6 +732,29 @@ protected:
 
         assert(groundTechIdx >= 0 && groundInstIdx >= 0);
 
+        if (airplaneTechIdx != -1)
+        {
+            const glm::mat4& initialWm = SC.TI[airplaneTechIdx].I[airplaneInstIdx].Wm;
+            airplanePosition = glm::vec3(initialWm[3]);
+            dBodySetPosition(odeAirplaneBody, airplanePosition.x, airplanePosition.y, airplanePosition.z);
+            dBodySetLinearDamping(odeAirplaneBody, 0.f);
+            // FIX: Aggiunto damping angolare per maggiore stabilità
+            dBodySetAngularDamping(odeAirplaneBody, 0.5f);
+            airplaneScale = glm::vec3(glm::length(glm::vec3(initialWm[0])), glm::length(glm::vec3(initialWm[1])),
+                                      glm::length(glm::vec3(initialWm[2])));
+            if (airplaneScale.x == 0.0f) airplaneScale.x = 1.0f;
+            if (airplaneScale.y == 0.0f) airplaneScale.y = 1.0f;
+            if (airplaneScale.z == 0.0f) airplaneScale.z = 1.0f;
+            glm::mat3 rotationPart = glm::mat3(initialWm);
+            rotationPart[0] /= airplaneScale.x;
+            rotationPart[1] /= airplaneScale.y;
+            rotationPart[2] /= airplaneScale.z;
+            airplaneOrientation = glm::quat_cast(rotationPart) * airplaneModelCorrection;
+            airplaneInitialized = true;
+
+            dBodySetLinearDamping(odeAirplaneBody, 0.005f); // adjust between 0.1–10.0
+        }
+
         std::cout << "Init done!\n";
     }
 
@@ -866,9 +881,34 @@ protected:
                 wx = lx + worldOffset.x;
                 wz = lz + worldOffset.z;
 
-                h = noiseGround.GetNoise(wx * NOISE_SCALE,
-                                               wz * NOISE_SCALE)
-                        * HEIGHT_SCALE;
+                // after computing your raw noise‑height:
+                float rawH    = noiseGround.GetNoise(wx * NOISE_SCALE,
+                                                     wz * NOISE_SCALE)
+                              * HEIGHT_SCALE;
+
+                // your “hard” floor in world‑units:
+                const float floorY      = -2.5f / 500.f;
+
+                // how wide (in world‑units) the blend region is around floorY:
+                const float blendWidth  = 0.5f / 500.f;
+
+                // now compute a blend factor t that goes 0→1 as rawH goes
+                // from (floorY - blendWidth) up to (floorY + blendWidth)
+                float t = glm::smoothstep(floorY - blendWidth,
+                                          floorY + blendWidth,
+                                          rawH);
+
+                // and your “flat” version (maybe you still want a tiny wiggle):
+                float flatH = floorY
+                            - std::abs(noiseGround.GetNoise(wx * NOISE_SCALE,
+                                                            wz * NOISE_SCALE,
+                                                            counterGlobal * 0.3f)
+                                       * 0.001f);
+
+                // finally mix between the two:
+                h = glm::mix(flatH, rawH, t);
+
+                // write back
                 p->y = h;
 
             }
@@ -1045,29 +1085,10 @@ protected:
         {
             changeTangents = !changeTangents;
         }
-    }
-
-    // --- Prototipo della funzione per gestire l'accelerazione ---
-    void handleAirplaneBoost(GLFWwindow* window, float deltaT, float& currentSpeedMultiplier,
-                             float AIRPLANE_FORWARD_SPEED, glm::vec3& localForward, glm::vec3& airplanePosition)
-    {
-        const float BOOST_MULTIPLIER = 2.0f; // Moltiplicatore di velocità quando si preme spazio
-        const float ACCELERATION_RATE = 2.0f; // Velocità di accelerazione/decelerazione
-
-        bool isBoosting = (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS);
-
-        // maxSpeed = isBoosting ? 40.0f : 20.0f; // Velocità massima in base allo stato del motore
-        // // Calcola il moltiplicatore di velocità target
-        // float targetSpeedMultiplier = isBoosting ? BOOST_MULTIPLIER : 1.0f;
-        //
-        // // Interpola gradualmente il moltiplicatore di velocità corrente verso il target
-        // float deltaSpeedMultiplier = targetSpeedMultiplier - currentSpeedMultiplier;
-        // currentSpeedMultiplier += deltaSpeedMultiplier * ACCELERATION_RATE * deltaT;
-        //
-        // // Applica il moltiplicatore alla velocità di movimento
-        // float currentForwardSpeed = AIRPLANE_FORWARD_SPEED * currentSpeedMultiplier;
-        //
-        // airplanePosition += localForward * (currentForwardSpeed * deltaT);
+        isBoosting = false;
+        if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS) {
+            isBoosting = true;
+        }
     }
 
     // --- Aggiorna stato e animazioni ---
@@ -1099,7 +1120,7 @@ protected:
         guboground.lightColor = glm::vec4(1.0f);
         guboground.eyePos = cameraPos;
         guboground.eyePosNoSmooth = gameState != GAME_OVER ? airplanePosition : cameraPos;
-        guboground.groundHeight = groundY; // Y component of the ground base world matrix
+        guboground.otherParams = glm::vec4(groundY, -2.f, 1.f, 0.0f);
 
         UniformBufferObjectSimp ubos{};
         for (int inst_idx = 0; inst_idx < SC.TI[SIMP_TECH_INDEX].InstanceCount; ++inst_idx)
@@ -1178,38 +1199,10 @@ protected:
         glm::vec3 m, r;
         bool fire;
         getSixAxis(deltaT, m, r, fire);
-        // 4. Esegui la logica principale a doppia modalità (Aereo o Personaggio)
         glm::mat4 viewMatrix;
-
+        counterGlobal += deltaT;
         // Assicuriamoci che deltaT non sia zero o negativo per evitare instabilità
         if (deltaT <= 0.0f) deltaT = 0.0001f;
-
-        if (airplaneTechIdx != -1 && !airplaneInitialized)
-        {
-            const glm::mat4& initialWm = SC.TI[airplaneTechIdx].I[airplaneInstIdx].Wm;
-            airplanePosition = glm::vec3(initialWm[3]);
-            dBodySetPosition(odeAirplaneBody, airplanePosition.x, airplanePosition.y, airplanePosition.z);
-            dBodySetLinearDamping(odeAirplaneBody, 0.f);
-            // FIX: Aggiunto damping angolare per maggiore stabilità
-            dBodySetAngularDamping(odeAirplaneBody, 0.5f);
-            airplaneScale = glm::vec3(glm::length(glm::vec3(initialWm[0])), glm::length(glm::vec3(initialWm[1])),
-                                      glm::length(glm::vec3(initialWm[2])));
-            if (airplaneScale.x == 0.0f) airplaneScale.x = 1.0f;
-            if (airplaneScale.y == 0.0f) airplaneScale.y = 1.0f;
-            if (airplaneScale.z == 0.0f) airplaneScale.z = 1.0f;
-            glm::mat3 rotationPart = glm::mat3(initialWm);
-            rotationPart[0] /= airplaneScale.x;
-            rotationPart[1] /= airplaneScale.y;
-            rotationPart[2] /= airplaneScale.z;
-            airplaneOrientation = glm::normalize(glm::quat_cast(rotationPart) * airplaneModelCorrection);
-            airplaneInitialized = true;
-
-            dBodySetLinearDamping(odeAirplaneBody, 0.005f); // adjust between 0.1–10.0
-
-            // dBodySetAngularDamping(odeAirplaneBody, 0.9f); // adjust between 0.1–1.0
-            // dBodySetAngularDampingThreshold(odeAirplaneBody, 0.01f); // adjust to your liking
-        }
-
 
         if (gameState == START_MENU && airplaneInitialized)
         {
@@ -1227,14 +1220,13 @@ protected:
             );
             cameraPos = airplanePosition + cameraOffset;
             cameraLookAt = airplanePosition;
-            ViewPrj = glm::perspective(currentFov, Ar, 1.f, 500.0f);
             glm::mat4 projectionMatrix = glm::perspective(currentFov, Ar, 1.f, 500.f);
             projectionMatrix[1][1] *= -1;
             viewMatrix = glm::lookAt(cameraPos, cameraLookAt, glm::vec3(0.0f, 1.0f, 0.0f));
 
             glm::mat4 airplaneGlobal =
                                 glm::translate(glm::mat4(1.0f), airplanePosition) *
-                                glm::mat4_cast( airplaneOrientation /* skip modelCorrection here */ ) *
+                                glm::mat4_cast(airplaneOrientation) *
                                 glm::scale  (glm::mat4(1.0f), airplaneScale);
 
             glm::mat4 rotorLocal =
@@ -1251,12 +1243,7 @@ protected:
 
             ViewPrj = projectionMatrix * viewMatrix;
 
-            // updateUniforms(currentImage, deltaT);
-
-            // 4) Stampa il testo “Premi P per iniziare”
             txt.print(0.f, 0.f, "PREMI P PER INIZIARE", INSTRUCTIONS_TEXT, "CO", true, false, true, TAL_CENTER, TRH_CENTER, TRV_MIDDLE, {1, 1, 1, 1}, {0, 0, 0, 1}, {0, 0, 0, 0}, 2, 2);
-            txt.updateCommandBuffer();
-            // 5) Controlla P
             if (glfwGetKey(window, GLFW_KEY_P) == GLFW_PRESS)
             {
                 txt.removeText(INSTRUCTIONS_TEXT);
@@ -1267,7 +1254,7 @@ protected:
         {
             handleKeyboardInput();
 
-            bool isBoosting = (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS);
+
             float targetFov = baseFov;
             if (isBoosting && currentCameraMode == THIRD_PERSON)
             {
@@ -1364,36 +1351,11 @@ protected:
                                   dragForce.z);
                 }
                 const float takeoffSpeed = 5.0f; // m/s, tune to your liking
-                // if (magSpeed > takeoffSpeed) {
-                //     const float rho = 1.225f; // kg/m^3, density of air at sea level
-                //     const float wingArea = 10.0f; // m^2, tune to your liking
-                //     const float CL = 1.0f; // lift coefficient, tune to your liking
-                //     float liftMag = 0.5f * rho * magSpeed * magSpeed * wingArea * CL;
-                //     const dReal* q = dBodyGetQuaternion(odeAirplaneBody);
-                //     glm::quat orient(q[0], q[1], q[2], q[3]);
-                //     glm::vec3 localUp = orient * glm::vec3(0,1,0);
-                //     dBodyAddForce(odeAirplaneBody,
-                //                   liftMag * localUp.x,
-                //                   liftMag * localUp.y,
-                //                   liftMag * localUp.z);
-                // }
 
-                isAirplaneOnGround = (pos[1] <= groundY + 0.1f);
+                isAirplaneOnGround = (pos[1] <= groundY + 0.3f);
                 bool keysPressed = false;
-                // const dReal* q = dBodyGetQuaternion(odeAirplaneBody);
-                // glm::quat Q{
-                //     static_cast<float>(q[0]), static_cast<float>(q[1]), static_cast<float>(q[2]),
-                //     static_cast<float>(q[3])
-                // };
 
-                if (isAirplaneOnGround)
-                {
-                    // --- CONTROLLO A TERRA (TIPO AUTOMOBILE) ---
-
-                    // if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) // gira a sinistra
-                    // if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) // gira a destra
-                }
-                else
+                if (!isAirplaneOnGround)
                 {
                     // --- CONTROLLO IN VOLO (AERODINAMICO) ---
                     if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS)
@@ -1567,8 +1529,10 @@ protected:
 
                 pos = dBodyGetPosition(odeAirplaneBody);
                 const dReal* rot = dBodyGetQuaternion(odeAirplaneBody);
+                const dReal* linVel = dBodyGetLinearVel(odeAirplaneBody);
                 airplanePosition = glm::vec3(pos[0], pos[1], pos[2]);
                 airplaneOrientation = glm::quat(rot[0], rot[1], rot[2], rot[3]);
+                airplaneVelocity = glm::vec3(linVel[0], linVel[1], linVel[2]);
 
                 glm::quat finalOrientation = airplaneOrientation * airplaneModelCorrection;
 
@@ -1677,14 +1641,14 @@ protected:
                     {
                         float halfWidth = orthoZoom * Ar;
                         float halfHeight = orthoZoom;
-                        projectionMatrix = glm::ortho(-halfWidth, halfWidth, -halfHeight, halfHeight, -500.f, 500.f);
+                        projectionMatrix = glm::ortho(-halfWidth, halfWidth, -halfHeight, halfHeight, -100.f, 300.f);
                         break;
                     }
                 case ISOMETRIC:
                     {
                         float halfWidth = orthoZoom * Ar;
                         float halfHeight = orthoZoom;
-                        projectionMatrix = glm::ortho(-halfWidth, halfWidth, -halfHeight, halfHeight, -500.f, 500.f);
+                        projectionMatrix = glm::ortho(-halfWidth, halfWidth, -halfHeight, halfHeight, -100.f, 300.f);
                         break;
                     }
                 case PERSPECTIVE:
@@ -1774,6 +1738,11 @@ protected:
                     dReal fy = 0;
                     dReal fz = 0;
                     dBodyAddRelForce(odeAirplaneBody, -fx, fy, fz);
+                    dWorldSetGravity(odeWorld, 0, 0.f, 0); // Imposta la gravità!
+                }
+                else
+                {
+                    dWorldSetGravity(odeWorld, 0, -9.81, 0); // Imposta la gravità!
                 }
 
                 // Aggiorna la matrice del modello dell'aereo
@@ -1827,11 +1796,6 @@ protected:
             // Aggiorna gli uniformi e il command buffer alla fine
             // updateUniforms(currentImage, deltaT);
         }
-
-        glm::mat4 projectionMatrix = glm::perspective(currentFov, Ar, 1.f, 500.f);
-        projectionMatrix[1][1] *= -1;
-
-        ViewPrj = projectionMatrix * viewMatrix;
 
         updateUniforms(currentImage, deltaT);
 
@@ -2090,42 +2054,6 @@ protected:
             }
             alSourcef(engineSources[i], AL_GAIN, sourceGains[i]);
         }
-    }
-
-    void exportTriMeshToOBJ(const std::string &path,
-                            const std::vector<dReal> &triVertices,
-                            const std::vector<uint32_t> &triIndices)
-    {
-        std::ofstream out(path);
-        if(!out) {
-            std::cerr << "Failed to open " << path << " for writing\n";
-            return;
-        }
-
-
-        // write all vertices
-        size_t vcount = triVertices.size()/3;
-        out << "# OBJ export of " << vcount << " verts, "
-            << (triIndices.size()/3) << " tris\n";
-        for(size_t i = 0; i < vcount; ++i) {
-            dReal x = triVertices[3*i+0];
-            dReal y = triVertices[3*i+1];
-            dReal z = triVertices[3*i+2];
-            out << "v " << x << " " << y << " " << z << "\n";
-        }
-        out << "\n";
-
-        // write all faces (OBJ uses 1‑based indices)
-        size_t tcount = triIndices.size()/3;
-        for(size_t t = 0; t < tcount; ++t) {
-            uint32_t i0 = triIndices[3*t+0] + 1;
-            uint32_t i1 = triIndices[3*t+1] + 1;
-            uint32_t i2 = triIndices[3*t+2] + 1;
-            out << "f " << i0 << " " << i1 << " " << i2 << "\n";
-        }
-
-        out.close();
-        std::cout << "Wrote OBJ mesh to " << path << "\n";
     }
 
 private:
