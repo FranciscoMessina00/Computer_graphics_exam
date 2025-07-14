@@ -195,6 +195,8 @@ protected:
     float crashThreshold = 6000.f;
     bool hardImpact = false;
     bool isBoosting = false;
+    bool inWater = false;
+    float waterLevel = -2.f;
 
     dWorldID odeWorld = nullptr;
     dSpaceID odeSpace = nullptr;
@@ -722,9 +724,13 @@ protected:
         treeWorld.resize(88);
         for (auto& M : treeWorld)
         {
-            auto X = treeX(rng);
-            auto Z = treeZ(rng);
-            auto Y = noiseGround.GetNoise(X * 0.004f, Z * 0.004f) * 0.05f * 500;
+            float X, Z;
+            float Y = -100.f;
+            do {
+                X = treeX(rng);
+                Z = treeZ(rng);
+                Y = noiseGround.GetNoise(X * 0.004f, Z * 0.004f) * 0.05f * 500;
+            }while (Y < -0.5f);
             M =
                 glm::translate(glm::mat4(1.0f),
                                glm::vec3(X, Y, Z));
@@ -1120,7 +1126,7 @@ protected:
         guboground.lightColor = glm::vec4(1.0f);
         guboground.eyePos = cameraPos;
         guboground.eyePosNoSmooth = gameState != GAME_OVER ? airplanePosition : cameraPos;
-        guboground.otherParams = glm::vec4(groundY, -2.f, 1.f, 0.0f);
+        guboground.otherParams = glm::vec4(groundY, waterLevel, 1.f, 0.0f);
 
         UniformBufferObjectSimp ubos{};
         for (int inst_idx = 0; inst_idx < SC.TI[SIMP_TECH_INDEX].InstanceCount; ++inst_idx)
@@ -1675,6 +1681,7 @@ protected:
 
                 updateTreePositions();
                 collisionDetected();
+                insideWater();
 
                 for (auto &jf : jointFeedbacks) {
                     delete jf;
@@ -1692,25 +1699,6 @@ protected:
 
             if (airplaneInitialized)
             {
-                /*const float ROTATION_SPEED = 0.4f;
-                const float CAMERA_DISTANCE = 15.0f;
-                const float CAMERA_HEIGHT = 5.0f;
-
-                gameOverCameraAngle += ROTATION_SPEED * deltaT;
-                if (gameOverCameraAngle > glm::two_pi<float>()) {
-                    gameOverCameraAngle -= glm::two_pi<float>();
-                }
-
-                // Calcola la nuova posizione della telecamera basata sull'angolo
-                glm::vec3 cameraOffset(
-                    sin(gameOverCameraAngle) * CAMERA_DISTANCE,
-                    CAMERA_HEIGHT,
-                    cos(gameOverCameraAngle) * CAMERA_DISTANCE
-                );
-                cameraPos = airplanePosition + cameraOffset;
-                cameraLookAt = airplanePosition;*/
-
-
                 // Aggiorna le matrici di vista e proiezione
                 glm::mat4 projectionMatrix = glm::perspective(currentFov, Ar, 1.f, 500.f);
                 projectionMatrix[1][1] *= -1;
@@ -1776,16 +1764,19 @@ protected:
 
             // Mostra il messaggio di fine gioco
             std::ostringstream oss;
-            if (!hardImpact) {
+            if (inWater) {
+                oss << "Sei entrato in acqua!";
+            }
+            else if (hardImpact) {
+                oss << "Ti sei schiantato!";
+            }
+            else {
                 if (gemsCollected == gemsToCollect) {
                     oss << "Hai raccolto tutte le gemme!";
                 }
                 else {
                     oss << "Hai raccolto solo " << gemsCollected << " gemme su " << gemsToCollect << ". Hai perso!";
                 }
-            }
-            else {
-                oss << "Ti sei schiantato!";
             }
 
             oss << "\nFine del gioco! Premi esc per uscire";
@@ -1905,6 +1896,16 @@ protected:
         }
         return collision;
     }
+    bool insideWater() {
+        inWater = false;
+        if (airplanePosition.y < waterLevel - 1.f) {
+            if (isEngineOn) toggleEngineState();
+            std::cout << "Inside water\n";
+            inWater = true;
+            gameState = GAME_OVER;
+        }
+        return inWater;
+    }
 
     void audioInit()
     {
@@ -1997,6 +1998,12 @@ protected:
             if (z < airplanePosition.z - distance) z += distance * 2.f;
             if (z > airplanePosition.z + distance) z -= distance * 2.f;
             float yNew = sampleHeight(x, z);
+            while (yNew < -0.5f)
+            {
+                x = airplanePosition.x + treeX(rng);
+                z = airplanePosition.z + treeZ(rng);
+                yNew = noiseGround.GetNoise(x * 0.004f, z * 0.004f) * 0.05f * 500;
+            }
             M = glm::translate(glm::mat4(1.0f), {x, yNew, z});
         }
     }
