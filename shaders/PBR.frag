@@ -118,9 +118,9 @@ void main() {
     vec2 tiledUV = fract(worldUV + offset);
 
     // --- generate per‐tile randomness ---
-    float rndRot = hash12(tileID);          // [0,1)
-    float angle  = rndRot * 2.0 * PI;        // full 0→2π
-    float rndOff = (hash12(tileID + 0.5) - 0.5) * 0.3;
+//    float rndRot = hash12(tileID);          // [0,1)
+    float angle  = 0 * 2.0 * PI;        // full 0→2π
+    float rndOff = (hash12(tileID + 0.5) - 0.5) * 0;
     //   second hash for an offset in [-0.15, +0.15]
 
     // --- apply them around the tile‐center (0.5,0.5) ---

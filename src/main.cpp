@@ -540,7 +540,7 @@ protected:
                                     /*t1*/{true, 1, {}}, // index 1 of the "texture" field in the json file
                                     /*t2*/{true, 2, {}}, // index 2 of the "texture" field in the json file
                                     /*t3*/{true, 3, {}}, // index 3 of the "texture" field in the json file
-                                    /*t3*/{true, 4, {}} // index 3 of the "texture" field in the json file
+                                    /*t3*/{true, 4, {}} // index 4 of the "texture" field in the json file
                                 }
                             }
                         }
@@ -721,7 +721,7 @@ protected:
             ground->initDynamicVertexBuffer(this /* your BaseProject ptr */, byteSize);
             ground->updateVertexBuffer();
         }
-        treeWorld.resize(89);
+        treeWorld.resize(400);
         for (auto& M : treeWorld)
         {
             float X, Z;
