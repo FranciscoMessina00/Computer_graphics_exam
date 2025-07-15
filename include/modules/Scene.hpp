@@ -1,4 +1,3 @@
-
 struct TechniqueInstances;
 
 struct Instance {
@@ -234,134 +233,167 @@ std::cout << ts[k]["id"] << "(" << k << ") " << TT << "\n";
 		TechniqueInstanceCount = pis.size();
 std::cout << "Technique Instances count: " << TechniqueInstanceCount << "\n";
 		TI = (TechniqueInstances *)calloc(TechniqueInstanceCount, sizeof(TechniqueInstances));
+
 		InstanceCount = 0;
+		for (int k = 0; k < TechniqueInstanceCount; k++) {
+			for (auto& el : pis[k]["elements"]) {
+				if (el.contains("count")) {
+					InstanceCount += el["count"].get<int>();
+				} else {
+					InstanceCount++;
+				}
+			}
+		}
+
+		I = (Instance **)calloc(InstanceCount, sizeof(Instance *));
+		int current_instance_idx = 0;
 
 		for(int k = 0; k < TechniqueInstanceCount; k++) {
 			std::string Pid = pis[k]["technique"].template get<std::string>();
 			
 			TI[k].T = TechniqueIds[Pid];
 			nlohmann::json is = pis[k]["elements"];
-			TI[k].InstanceCount = is.size();
+
+			int totalInstancesInTech = 0;
+			for (auto& el : is) {
+				if (el.contains("count")) {
+					totalInstancesInTech += el["count"].get<int>();
+				} else {
+					totalInstancesInTech++;
+				}
+			}
+			TI[k].InstanceCount = totalInstancesInTech;
+
 std::cout << "Technique: " << Pid << "(" << k << "), Instances count: " << TI[k].InstanceCount << "\n";
 			TI[k].I = (Instance *)calloc(TI[k].InstanceCount, sizeof(Instance));
 			
-			for(int j = 0; j < TI[k].InstanceCount; j++) {
-			
-std::cout << k << "." << j << "\t" << is[j]["id"] << ", " << is[j]["model"] << "(" << MeshIds[is[j]["model"]] << "), {";
-				TI[k].I[j].id  = new std::string(is[j]["id"]);
-				TI[k].I[j].Mid = MeshIds[is[j]["model"]];
-				int NTextures = is[j]["texture"].size();
-				if(NTextures != TI[k].T->Ntextures) {
-					std::cout << "Wrong number of textures!\n";
-					exit(0);
+			int instance_offset = 0;
+			for(int j = 0; j < is.size(); j++) {
+				int count = 1;
+				if (is[j].contains("count")) {
+					count = is[j]["count"];
 				}
-				TI[k].I[j].NTx = NTextures;
-				TI[k].I[j].Tid = (int *)calloc(NTextures, sizeof(int));
-std::cout << "#" << NTextures;
-				for(int h = 0; h < NTextures; h++) {
-					TI[k].I[j].Tid[h] = TextureIds[is[j]["texture"][h]];
-std::cout << " " << is[j]["texture"][h] << "(" << TI[k].I[j].Tid[h] << ")";
-				}
-std::cout << "}\n";
-				nlohmann::json TMjson = is[j]["transform"];
-				if(TMjson.is_null()) {
-std::cout << "Node has no transform: seek for translation, rotation and scaling\n";
-					bool manualPos = false;
-					
-					glm::vec3 trT = glm::vec3(0.0f);
-					glm::mat4 trR = glm::mat4(1.0f);
-					glm::vec3 trS = glm::vec3(1.0f);
-					nlohmann::json Tr_Tjson = is[j]["translate"];
-					if(!Tr_Tjson.is_null()) {
-						trT.x = Tr_Tjson[0];
-						trT.y = Tr_Tjson[1];
-						trT.z = Tr_Tjson[2];
-						manualPos = true;
+
+				for (int c = 0; c < count; c++) {
+					int current_instance_in_tech = instance_offset + c;
+
+std::cout << k << "." << j << "." << c << "\t" << is[j]["id"] << ", " << is[j]["model"] << "(" << MeshIds[is[j]["model"]] << "), {";
+					TI[k].I[current_instance_in_tech].id  = new std::string(is[j]["id"]);
+					TI[k].I[current_instance_in_tech].Mid = MeshIds[is[j]["model"]];
+					int NTextures = is[j]["texture"].size();
+					if(NTextures != TI[k].T->Ntextures) {
+						std::cout << "Wrong number of textures!\n";
+						exit(0);
 					}
-					
-					nlohmann::json Tr_REjson = is[j]["eulerAngles"];
-					if(!Tr_REjson.is_null()) {
-						trR = glm::rotate(glm::mat4(1.0f),
-										  glm::radians((float)Tr_REjson[1]),
-										  glm::vec3(0.0f,1.0f,0.0f)) *
-							  glm::rotate(glm::mat4(1.0f),
-										  glm::radians((float)Tr_REjson[0]),
-										  glm::vec3(1.0f,0.0f,0.0f)) *
-							  glm::rotate(glm::mat4(1.0f),
-										  glm::radians((float)Tr_REjson[2]),
-										  glm::vec3(0.0f,0.0f,1.0f));
-						manualPos = true;
-					} else {
-						nlohmann::json Tr_RQjson = is[j]["quaternion"];
-						if(!Tr_RQjson.is_null()) {
-							glm::quat trQ = glm::quat(Tr_RQjson[0],
-													  Tr_RQjson[1],
-													  Tr_RQjson[2],
-													  Tr_RQjson[3]);
-							trR = glm::mat4(trQ);
+					TI[k].I[current_instance_in_tech].NTx = NTextures;
+					TI[k].I[current_instance_in_tech].Tid = (int *)calloc(NTextures, sizeof(int));
+std::cout << "#" << NTextures;
+					for(int h = 0; h < NTextures; h++) {
+						TI[k].I[current_instance_in_tech].Tid[h] = TextureIds[is[j]["texture"][h]];
+std::cout << " " << is[j]["texture"][h] << "(" << TI[k].I[current_instance_in_tech].Tid[h] << ")";
+					}
+std::cout << "}\n";
+					nlohmann::json TMjson = is[j]["transform"];
+					if(TMjson.is_null()) {
+std::cout << "Node has no transform: seek for translation, rotation and scaling\n";
+						bool manualPos = false;
+
+						glm::vec3 trT = glm::vec3(0.0f);
+						glm::mat4 trR = glm::mat4(1.0f);
+						glm::vec3 trS = glm::vec3(1.0f);
+						nlohmann::json Tr_Tjson = is[j]["translate"];
+						if(!Tr_Tjson.is_null()) {
+							trT.x = Tr_Tjson[0];
+							trT.y = Tr_Tjson[1];
+							trT.z = Tr_Tjson[2];
 							manualPos = true;
 						}
-					}
 
-					nlohmann::json Tr_Sjson = is[j]["scale"];
-					if(!Tr_Sjson.is_null()) {
-						trS.x = Tr_Sjson[0];
-						trS.y = Tr_Sjson[1];
-						trS.z = Tr_Sjson[2];
-						manualPos = true;
-					}
-					
-					if(manualPos) {
-						TI[k].I[j].Wm = glm::translate(glm::mat4(1.0f), trT) *
-										trR *
-										glm::scale(glm::mat4(1.0f), trS);
-					} else {
-						TI[k].I[j].Wm = M[TI[k].I[j].Mid]->Wm;
-std::cout << "Using model transform matrix: " << TI[k].I[j].Mid << "\n";
+						nlohmann::json Tr_REjson = is[j]["eulerAngles"];
+						if(!Tr_REjson.is_null()) {
+							trR = glm::rotate(glm::mat4(1.0f),
+											  glm::radians((float)Tr_REjson[1]),
+											  glm::vec3(0.0f,1.0f,0.0f)) *
+								  glm::rotate(glm::mat4(1.0f),
+											  glm::radians((float)Tr_REjson[0]),
+											  glm::vec3(1.0f,0.0f,0.0f)) *
+								  glm::rotate(glm::mat4(1.0f),
+											  glm::radians((float)Tr_REjson[2]),
+											  glm::vec3(0.0f,0.0f,1.0f));
+							manualPos = true;
+						} else {
+							nlohmann::json Tr_RQjson = is[j]["quaternion"];
+							if(!Tr_RQjson.is_null()) {
+								glm::quat trQ = glm::quat(Tr_RQjson[0],
+														  Tr_RQjson[1],
+														  Tr_RQjson[2],
+														  Tr_RQjson[3]);
+								trR = glm::mat4(trQ);
+								manualPos = true;
+							}
+						}
+
+						nlohmann::json Tr_Sjson = is[j]["scale"];
+						if(!Tr_Sjson.is_null()) {
+							trS.x = Tr_Sjson[0];
+							trS.y = Tr_Sjson[1];
+							trS.z = Tr_Sjson[2];
+							manualPos = true;
+						}
+
+						if(manualPos) {
+							TI[k].I[current_instance_in_tech].Wm = glm::translate(glm::mat4(1.0f), trT) *
+											trR *
+											glm::scale(glm::mat4(1.0f), trS);
+						} else {
+							TI[k].I[current_instance_in_tech].Wm = M[TI[k].I[current_instance_in_tech].Mid]->Wm;
+std::cout << "Using model transform matrix: " << TI[k].I[current_instance_in_tech].Mid << "\n";
 for(int mmm = 0; mmm < 16; mmm++) {
-	std::cout << TI[k].I[j].Wm[mmm%4][mmm/4] << ", ";
+	std::cout << TI[k].I[current_instance_in_tech].Wm[mmm%4][mmm/4] << ", ";
 }
 std::cout << "\n";
+						}
+					} else {
+						float TMj[16];
+						for(int h = 0; h < 16; h++) {TMj[h] = TMjson[h];}
+						TI[k].I[current_instance_in_tech].Wm = glm::mat4(TMj[0],TMj[4],TMj[8],TMj[12],TMj[1],TMj[5],TMj[9],TMj[13],TMj[2],TMj[6],TMj[10],TMj[14],TMj[3],TMj[7],TMj[11],TMj[15]);
 					}
-				} else {
-					float TMj[16];
-					for(int h = 0; h < 16; h++) {TMj[h] = TMjson[h];}
-					TI[k].I[j].Wm = glm::mat4(TMj[0],TMj[4],TMj[8],TMj[12],TMj[1],TMj[5],TMj[9],TMj[13],TMj[2],TMj[6],TMj[10],TMj[14],TMj[3],TMj[7],TMj[11],TMj[15]);
-				}	
-				TI[k].I[j].TIp = &TI[k];
-				TI[k].I[j].D = (std::vector<DescriptorSetLayout *> **)calloc(sizeof(std::vector<DescriptorSetLayout *> *), Npasses);
-				TI[k].I[j].NDs = (int *)calloc(sizeof(int), Npasses);
-				for(int ipas = 0; ipas < Npasses; ipas++) {
-					TI[k].I[j].D[ipas] = &TI[k].T->PT[ipas].P->D;
-					TI[k].I[j].NDs[ipas] = TI[k].I[j].D[ipas]->size();
-					BP->DPSZs.setsInPool += TI[k].I[j].NDs[ipas];
-					for(int h = 0; h < TI[k].I[j].NDs[ipas]; h++) {
-						DescriptorSetLayout *DSL = (*TI[k].I[j].D[ipas])[h];
-						int DSLsize = DSL->Bindings.size();
+					TI[k].I[current_instance_in_tech].TIp = &TI[k];
+					TI[k].I[current_instance_in_tech].D = (std::vector<DescriptorSetLayout *> **)calloc(sizeof(std::vector<DescriptorSetLayout *> *), Npasses);
+					TI[k].I[current_instance_in_tech].NDs = (int *)calloc(sizeof(int), Npasses);
+					for(int ipas = 0; ipas < Npasses; ipas++) {
+						TI[k].I[current_instance_in_tech].D[ipas] = &TI[k].T->PT[ipas].P->D;
+						TI[k].I[current_instance_in_tech].NDs[ipas] = TI[k].I[current_instance_in_tech].D[ipas]->size();
+						BP->DPSZs.setsInPool += TI[k].I[current_instance_in_tech].NDs[ipas];
+						for(int h = 0; h < TI[k].I[current_instance_in_tech].NDs[ipas]; h++) {
+							DescriptorSetLayout *DSL = (*TI[k].I[current_instance_in_tech].D[ipas])[h];
+							int DSLsize = DSL->Bindings.size();
 
-						for (int l = 0; l < DSLsize; l++) {
-							if(DSL->Bindings[l].type == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER) {
-								BP->DPSZs.uniformBlocksInPool += 1;
-							} else {
-								BP->DPSZs.texturesInPool += 1;
+							for (int l = 0; l < DSLsize; l++) {
+								if(DSL->Bindings[l].type == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER) {
+									BP->DPSZs.uniformBlocksInPool += 1;
+								} else {
+									BP->DPSZs.texturesInPool += 1;
+								}
 							}
 						}
 					}
+					I[current_instance_idx++] = &TI[k].I[current_instance_in_tech];
 				}
-				InstanceCount++;
+				instance_offset += count;
 			}
 		}			
 
 std::cout << "Creating instances\n";
-		I =  (Instance **)calloc(InstanceCount, sizeof(Instance *));
+		//I =  (Instance **)calloc(InstanceCount, sizeof(Instance *));
 
 		int i = 0;
 		for(int k = 0; k < TechniqueInstanceCount; k++) {
 			for(int j = 0; j < TI[k].InstanceCount; j++) {
-				I[i] = &TI[k].I[j];
-				InstanceIds[*I[i]->id] = i;
-				I[i]->Iid = i;
-				
+				//I[i] = &TI[k].I[j];
+				InstanceIds[*TI[k].I[j].id] = i;
+				TI[k].I[j].Iid = i;
+
 				i++;
 			}
 		}
@@ -469,10 +501,10 @@ void Scene::populateCommandBuffer(VkCommandBuffer commandBuffer, int passId, int
 std::cout << "Generating draw calls for pass " << passId << "\n";
 	for(int k = 0; k < TechniqueInstanceCount; k++) {
 std::cout << "Considering technique " << k << "\n";
-		for(int i = 0; i < TI[k].InstanceCount; i++) {
-			Pipeline *P = TI[k].T->PT[passId].P;
-			if(P != nullptr) {
-				P->bind(commandBuffer);
+		Pipeline *P = TI[k].T->PT[passId].P;
+		if(P != nullptr) {
+			P->bind(commandBuffer);
+			for(int i = 0; i < TI[k].InstanceCount; i++) {
 
 std::cout << "Drawing Instance " << i << "\n";
 				M[TI[k].I[i].Mid]->bind(commandBuffer);

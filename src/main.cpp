@@ -721,7 +721,7 @@ protected:
             ground->initDynamicVertexBuffer(this /* your BaseProject ptr */, byteSize);
             ground->updateVertexBuffer();
         }
-        treeWorld.resize(88);
+        treeWorld.resize(89);
         for (auto& M : treeWorld)
         {
             float X, Z;
@@ -1993,16 +1993,38 @@ protected:
             // extract translation from the matrix
             float x = M[3][0];
             float z = M[3][2];
-            if (x < airplanePosition.x - distance) x += distance * 2.f;
-            if (x > airplanePosition.x + distance) x -= distance * 2.f;
-            if (z < airplanePosition.z - distance) z += distance * 2.f;
-            if (z > airplanePosition.z + distance) z -= distance * 2.f;
+            bool movedX = false;
+            bool movedZ = false;
+
+            if (x < airplanePosition.x - distance) {
+                x += distance * 2.f;
+                movedX = true;
+            }
+            if (x > airplanePosition.x + distance) {
+                x -= distance * 2.f;
+                movedX = true;
+            }
+            if (z < airplanePosition.z - distance) {
+                z += distance * 2.f;
+                movedZ = true;
+            }
+            if (z > airplanePosition.z + distance) {
+                z -= distance * 2.f;
+                movedZ = true;
+            }
+
             float yNew = sampleHeight(x, z);
             while (yNew < -0.5f)
             {
-                x = airplanePosition.x + treeX(rng);
-                z = airplanePosition.z + treeZ(rng);
-                yNew = noiseGround.GetNoise(x * 0.004f, z * 0.004f) * 0.05f * 500;
+                if (movedX && !movedZ) { // Spostato solo sull'asse X
+                    z = airplanePosition.z + treeZ(rng);
+                } else if (!movedX && movedZ) { // Spostato solo sull'asse Z
+                    x = airplanePosition.x + treeX(rng);
+                } else { // Spostato su entrambi gli assi o per niente (ma y è basso)
+                    x = airplanePosition.x + treeX(rng);
+                    z = airplanePosition.z + treeZ(rng);
+                }
+                yNew = sampleHeight(x, z);
             }
             M = glm::translate(glm::mat4(1.0f), {x, yNew, z});
         }
