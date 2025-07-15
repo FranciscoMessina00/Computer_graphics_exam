@@ -30,7 +30,7 @@
 	"textures": [
 		{"id": "pnois", "texture": "assets/textures/Perlin_noise.png", "format": "D"},
 		{"id": "skybox", "texture": "assets/textures/daybox_2.hdr", "format": "C"},
-		{"id": "ap", "texture": "assets/textures/airplane_poly.png", "format": "C"},
+		{"id": "ap", "texture": "assets/textures/airplane_bonkers3_poly.png", "format": "C"},
 
 		{"id": "gem", "texture": "assets/textures/Gem01_Blue_Albedo.png", "format": "C"},
 		{"id": "gemMetallic", "texture": "assets/textures/Gem01_Blue_MetallicSmoothness.png", "format": "D"},
