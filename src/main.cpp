@@ -125,7 +125,7 @@ protected:
     glm::vec3 targetCameraPos = {};
 
     std::vector<glm::mat4> gemWorlds, treeWorld; // world transforms for each spawned gem
-    std::vector<bool> gemsCatched = {false, false, false, false, false, false, false, false, false, false};
+    std::vector<bool> gemsCatched = {true, true, true, true, true, true, true, true, true, true};
     int gemsCollected = 0;
     int gemsToCollect = 10; // total number of gems to collect
     float gemScale = 0.20f; // scale of the gem model
