@@ -222,6 +222,9 @@ int Scene::init(BaseProject *_BP,  int _Npasses, std::vector<VertexDescriptorRef
 				T[k]->init(BP, ts[k]["texture"]);
 			} else if(TT[0] == 'D') {
 				T[k]->init(BP, ts[k]["texture"], VK_FORMAT_R8G8B8A8_UNORM);
+			} else if(TT[0] == 'S') {
+				std::vector<std::string> files = ts[k]["texture"].template get<std::vector<std::string>>();
+				T[k]->initCubic(BP, files, VK_FORMAT_R8G8B8A8_UNORM);
 			} else {
 				std::cout << "FORMAT UNKNOWN: " << TT << "\n";
 			}

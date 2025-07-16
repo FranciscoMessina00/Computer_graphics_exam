@@ -29,7 +29,14 @@
 	],
 	"textures": [
 		{"id": "pnois", "texture": "assets/textures/Perlin_noise.png", "format": "D"},
-		{"id": "skybox", "texture": "assets/textures/daybox_2.hdr", "format": "C"},
+		{"id": "skybox", "texture": [
+			"assets/textures/skybox/px.png",
+			"assets/textures/skybox/nx.png",
+			"assets/textures/skybox/py.png",
+			"assets/textures/skybox/ny.png",
+			"assets/textures/skybox/pz.png",
+			"assets/textures/skybox/nz.png"
+		], "format": "S"},
 		{"id": "ap", "texture": "assets/textures/airplane_bonkers3_poly.png", "format": "C"},
 
 		{"id": "gem", "texture": "assets/textures/Gem01_Blue_Albedo.png", "format": "C"},
@@ -78,7 +85,6 @@
 			{"id": "Tree_18",  "model": "Tree18",  "texture": ["Tree", "pnois"],"scale":[4, 4, 4], "count" :20},
 			{"id": "Tree_19",  "model": "Tree19",  "texture": ["Tree", "pnois"],"scale":[4, 4, 4], "count" :20},
 			{"id": "Tree_20",  "model": "Tree20",  "texture": ["Tree", "pnois"],"scale":[4, 4, 4], "count" :20}
-
 		]},
 		{"technique": "CookTorranceGem", "elements": [
 			{"id": "gem",  "model": "gem",   "texture": ["gem", "gemMetallic"],
@@ -89,7 +95,10 @@
 			}
 		]},
 		{"technique": "SkyBox", "elements": [
-			{"id": "skybox",  "model": "skybox",   "texture": ["skybox"]}
+			{
+				"id": "skybox", "model": "skybox",
+				"texture": ["skybox"]
+			}
 		]},
 		{"technique": "PBR", "elements": [
 			{"id": "2DplaneTan",  "model": "2DplaneTan",   "texture": ["GrassAlbedo", "GrassNm", "GrassOcclusion", "GrassRoughness", "water", "sand", "rock"],
