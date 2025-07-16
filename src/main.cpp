@@ -492,7 +492,9 @@ protected:
                   {&DSLglobal, &DSLlocalGem});
 
         PskyBox.init(this, &VDskyBox, "shaders/SkyBoxShader.vert.spv", "shaders/SkyBoxShader.frag.spv", {&DSLskyBox});
+        // Here we assure that the skybox is rendered before the other objects, where there is nothing else
         PskyBox.setCompareOp(VK_COMPARE_OP_LESS_OR_EQUAL);
+        // Here we set the cull mode to back faces, this is also done by default for PsimpObj and P_PBR
         PskyBox.setCullMode(VK_CULL_MODE_BACK_BIT);
         PskyBox.setPolygonMode(VK_POLYGON_MODE_FILL);
 
@@ -1647,6 +1649,7 @@ protected:
                 glm::vec3 cameraUp = glm::normalize(airplaneOrientation * glm::vec3(0.0f, 1.0f, 0.0f));
                 //viewMatrix = glm::lookAt(finalCameraPos, cameraLookAt, cameraUp);
 
+                //Tree projection modalities,a perspective and 2 orthographic
                 glm::mat4 projectionMatrix;
                 switch (currentProjectionMode) {
                 case ORTHOGRAPHIC:
@@ -1658,6 +1661,7 @@ protected:
                     }
                 case ISOMETRIC:
                     {
+                        // Same projection as orthographic, but with a different view matrix
                         float halfWidth = orthoZoom * Ar;
                         float halfHeight = orthoZoom;
                         projectionMatrix = glm::ortho(-halfWidth, halfWidth, -halfHeight, halfHeight, -100.f, 300.f);
@@ -1666,6 +1670,7 @@ protected:
                 case PERSPECTIVE:
                 default:
                     {
+                        // Here we use the currentFov for perspective projection
                         projectionMatrix = glm::perspective(currentFov, Ar, 1.f, 500.f);
                         break;
                     }
@@ -1675,7 +1680,7 @@ protected:
 
                 // La logica della viewMatrix rimane quasi invariata, ma per l'isometrica va forzata
                 if (currentProjectionMode == ISOMETRIC) {
-                    //glm::vec3 isoCameraPos = airplanePosition + glm::vec3(30.0f, 30.0f, 30.0f);
+                    // Fixed camera position for isometric view
                     const float isoDistance = 40.0f;
                     glm::vec3 isoCameraPos = airplanePosition + glm::vec3(isoDistance, isoDistance, isoDistance);
                     viewMatrix = glm::lookAt(isoCameraPos, airplanePosition, glm::vec3(0.0f, 1.0f, 0.0f));
