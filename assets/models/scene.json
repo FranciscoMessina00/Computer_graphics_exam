@@ -4,7 +4,7 @@
 		{"id": "ap", "VD": "VDsimp", "model": "assets/models/aeroplanino.obj", "format": "OBJ"},
 		{"id": "ap_rotor", "VD": "VDsimp", "model": "assets/models/aeroplanino_motore.obj", "format": "OBJ"},
 		{"id": "2Dplane", "VD": "VDsimp", "model": "assets/models/plane.obj", "format": "OBJ"},
-		{"id": "2DplaneTan", "VD": "VDtan", "model": "assets/models/2Dplane.gltf", "format": "GLTF"},
+		{"id": "2DplaneTan", "VD": "VDtan", "model": "assets/models/2Dplane_mid_res.gltf", "format": "GLTF"},
 		{"id": "gem", "VD": "VDsimp", "model": "assets/models/Gem01_Blue.mgcg", "format": "MGCG"},
 		{"id": "Tree", "VD": "VDsimp", "model":  "assets/models/vegetation.030.mgcg", "format":  "MGCG"},
 		{"id": "Tree2", "VD": "VDsimp", "model":  "assets/models/vegetation.029.mgcg", "format":  "MGCG"},
@@ -40,8 +40,9 @@
 		{"id": "GrassOcclusion", "texture": "assets/textures/GrassTexture/grass_occlusion.jpg", "format": "D"},
 		{"id": "GrassRoughness", "texture": "assets/textures/GrassTexture/grass_roughness.jpg", "format": "D"},
 		{"id": "Tree", "texture": "assets/textures/Textures_Vegetation.png", "format": "C"},
-		{"id": "water", "texture": "assets/textures/water_albedo_2.jpg", "format": "C"}
-
+		{"id": "water", "texture": "assets/textures/water_albedo_2.jpg", "format": "C"},
+		{"id": "sand", "texture": "assets/textures/GrassTexture/sand_albedo_2.jpg", "format": "C"},
+		{"id": "rock", "texture": "assets/textures/GrassTexture/rock_albedo_2.jpg", "format": "C"}
 
 
 	],
@@ -91,7 +92,7 @@
 			{"id": "skybox",  "model": "skybox",   "texture": ["skybox"]}
 		]},
 		{"technique": "PBR", "elements": [
-			{"id": "2DplaneTan",  "model": "2DplaneTan",   "texture": ["GrassAlbedo", "GrassNm", "GrassOcclusion", "GrassRoughness", "water"],
+			{"id": "2DplaneTan",  "model": "2DplaneTan",   "texture": ["GrassAlbedo", "GrassNm", "GrassOcclusion", "GrassRoughness", "water", "sand", "rock"],
 				"scale": [500, 500, 500]
 			}
 		]}

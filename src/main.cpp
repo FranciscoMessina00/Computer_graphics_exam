@@ -197,6 +197,8 @@ protected:
     bool isBoosting = false;
     bool inWater = false;
     float waterLevel = -2.f;
+    float grassLevel = -1.5f;
+    float rockLevel = 15.f;
 
     dWorldID odeWorld = nullptr;
     dSpaceID odeSpace = nullptr;
@@ -397,7 +399,10 @@ protected:
                              {2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 1, 1},
                              {3, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 2, 1},
                              {4, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 3, 1},
-                             {5, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 4, 1}
+                             {5, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 4, 1},
+                             {6, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 5, 1},
+                             {7, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 6, 1},
+
                          });
 
         VDsimp.init(this, {
@@ -536,16 +541,17 @@ protected:
                                 //Pipeline and DSL for the first pass
                                 /*DSLglobal*/{},
                                 /*DSLlocalPBR*/{
-                                    /*t0*/{true, 0, {}}, // index 0 of the "texture" field in the json file
-                                    /*t1*/{true, 1, {}}, // index 1 of the "texture" field in the json file
-                                    /*t2*/{true, 2, {}}, // index 2 of the "texture" field in the json file
-                                    /*t3*/{true, 3, {}}, // index 3 of the "texture" field in the json file
-                                    /*t3*/{true, 4, {}} // index 4 of the "texture" field in the json file
-                                }
+                                     /*t0*/{true, 0, {}}, // index 0 of the "texture" field in the json file
+                                     /*t1*/{true, 1, {}}, // index 1 of the "texture" field in the json file
+                                     /*t2*/{true, 2, {}}, // index 2 of the "texture" field in the json file
+                                     /*t3*/{true, 3, {}}, // index 3 of the "texture" field in the json file
+                                     /*t4*/{true, 4, {}}, // index 4 of the "texture" field in the json file
+                                     /*t5*/{true, 5, {}}, // index 5 of the "texture" field in the json file
+                                     /*t6*/{true, 6, {}} // index 6 of the "texture" field in the json file
+                                 }
                             }
                         }
-                    }, /*TotalNtextures*/5, &VDtan);
-
+                    }, /*TotalNtextures*/7, &VDtan);
 
         // Models, textures and Descriptors (values assigned to the uniforms)
 
@@ -1126,7 +1132,7 @@ protected:
         guboground.lightColor = glm::vec4(1.0f);
         guboground.eyePos = cameraPos;
         guboground.eyePosNoSmooth = gameState != GAME_OVER ? airplanePosition : cameraPos;
-        guboground.otherParams = glm::vec4(groundY, waterLevel, 1.f, 0.0f);
+        guboground.otherParams = glm::vec4(groundY, waterLevel, grassLevel, rockLevel);
 
         UniformBufferObjectSimp ubos{};
         for (int inst_idx = 0; inst_idx < SC.TI[SIMP_TECH_INDEX].InstanceCount; ++inst_idx)

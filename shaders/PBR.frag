@@ -14,15 +14,15 @@ layout(binding = 2, set = 1) uniform sampler2D normalMap;
 layout(binding = 3, set = 1) uniform sampler2D groundOcclusionMap;
 layout(binding = 4, set = 1) uniform sampler2D groundRoughnessMap;
 layout(binding = 5, set = 1) uniform sampler2D waterMap;
-//layout(binding = 7, set = 1) uniform sampler2D waterOcclusionMap;
-//layout(binding = 8, set = 1) uniform sampler2D waterRoughnessMap;
+layout(binding = 6, set = 1) uniform sampler2D sandMap;
+layout(binding = 7, set = 1) uniform sampler2D rockMap;
 
 layout(binding = 0, set = 0) uniform GlobalUniformBufferObject {
     vec3 lightDir;
     vec4 lightColor;
     vec3 eyePos;
     vec3 airplanePos;
-    vec4 otherParams; // ground height, waterLevel, shoreBlend, nothing
+    vec4 otherParams; // ground height, waterLevel, grassLevel, rockLevel
 } gubo;
 
 const float PI = 3.14159265359;
@@ -118,29 +118,46 @@ void main() {
     vec2 tiledUV = fract(worldUV + offset);
 
     // --- generate per‐tile randomness ---
-//    float rndRot = hash12(tileID);          // [0,1)
-    float angle  = 0 * 2.0 * PI;        // full 0→2π
-    float rndOff = (hash12(tileID + 0.5) - 0.5) * 0;
-    //   second hash for an offset in [-0.15, +0.15]
+    float rnd = hash12(tileID);
+    float angle = 0.0;
+    if (rnd < 0.33) {
+        angle = PI / 2.0; // 90 degrees
+    } else if (rnd < 0.66) {
+        angle = PI; // 180 degrees
+    }
+    // else angle is 0, for the rest
 
     // --- apply them around the tile‐center (0.5,0.5) ---
     vec2 uv = tiledUV - 0.5;
     uv = rotate2D(uv, angle);
-    uv += 0.5 + vec2(rndOff);
     // uv = tiledUV;
     // worldUV += offset;
     worldUV = uv;
     // --------------
 
-    float smoothing = smoothstep(
-        gubo.otherParams.y - gubo.otherParams.z * 0.5,
-        gubo.otherParams.y + gubo.otherParams.z * 0.5,
-        fragPos.y
-    );
+    float waterLevel = gubo.otherParams.y;
+    float grassLevel = gubo.otherParams.z;
+    float rockLevel = gubo.otherParams.w;
+    float shoreBlend = 0.3; // Blending factor
 
-    vec3 groundColor = texture(albedoMap, worldUV).rgb;
-    vec3 waterColor  = texture(waterMap,  worldUV / 2).rgb;
-    vec3 albedo = mix(waterColor, groundColor, smoothing);
+    // Get colors from textures
+    vec3 waterColor = texture(waterMap, worldUV).rgb;
+    vec3 sandColor = texture(sandMap, worldUV).rgb;
+    vec3 grassColor = texture(albedoMap, worldUV).rgb; // Use albedoMap for grass
+    vec3 rockColor = texture(rockMap, worldUV).rgb;
+
+    // Blend between water and sand
+    float waterSandMix = smoothstep(waterLevel - shoreBlend, waterLevel + shoreBlend, fragPos.y);
+    vec3 albedo = mix(waterColor, sandColor, waterSandMix);
+
+    // Blend between sand and grass
+    float sandGrassMix = smoothstep(grassLevel - shoreBlend, grassLevel + shoreBlend, fragPos.y);
+    albedo = mix(albedo, grassColor, sandGrassMix);
+
+    // Blend between grass and rock
+    float grassRockMix = smoothstep(rockLevel - shoreBlend, rockLevel + shoreBlend, fragPos.y);
+    albedo = mix(albedo, rockColor, grassRockMix);
+
 
 //    float groundOcclusion = texture(groundOcclusionMap, worldUV).r;
 //    float waterOcclusion  = texture(waterOcclusionMap, worldUV / 2).r;
