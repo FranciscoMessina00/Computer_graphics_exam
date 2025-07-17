@@ -196,7 +196,7 @@ protected:
     bool hardImpact = false;
     bool isBoosting = false;
     bool inWater = false;
-    float waterLevel = -2.f;
+    float waterLevel = -2.5f;
     float grassLevel = -1.5f;
     float rockLevel = 15.f;
 
@@ -901,7 +901,7 @@ protected:
                               * HEIGHT_SCALE;
 
                 // your “hard” floor in world‑units:
-                const float floorY      = -2.5f / 500.f;
+                const float floorY      = (waterLevel - 0.2f) / 500.f;
 
                 // how wide (in world‑units) the blend region is around floorY:
                 const float blendWidth  = 0.5f / 500.f;
@@ -928,13 +928,13 @@ protected:
             }
             // ------- Normal, tangent and bi-tanget modification -------
             if (changeTangents) {
-                // 1) Allocate accumulators
+                // Allocate accumulators
                 size_t vertexCount = rawVB.size() / stride;
                 std::vector<glm::vec3> nAccum(vertexCount, glm::vec3(0.0f));
                 std::vector<glm::vec3> tAccum(vertexCount, glm::vec3(0.0f));
                 std::vector<glm::vec3> bAccum(vertexCount, glm::vec3(0.0f));
 
-                // 2) Loop over every triangle to accumulate normals & tangents
+                // Loop over every triangle to accumulate normals & tangents
                 for (size_t tri = 0; tri < ground->indices.size(); tri += 3) {
                     uint32_t i0 = ground->indices[tri + 0];
                     uint32_t i1 = ground->indices[tri + 1];
@@ -997,7 +997,6 @@ protected:
                 }
 
             }
-
             // ---------------------------------------------------
             ground->updateVertexBuffer();
         }
@@ -1376,12 +1375,12 @@ protected:
                     {
                         keysPressed = true;
                         dBodyAddRelTorque(odeAirplaneBody,
-                                          0,
-                                          +Iyy * a_yaw,
-                                          0);
-                        dBodyAddRelTorque(odeAirplaneBody,
                                           +Izz * a_roll,
                                           0,
+                                          0);
+                        dBodyAddRelTorque(odeAirplaneBody,
+                                          0,
+                                          +Iyy * a_yaw,
                                           0);
 
                         // --- 3) Lateral “skid” force ---
@@ -1557,7 +1556,7 @@ protected:
 
                 glm::mat4 airplaneGlobal =
                                     glm::translate(glm::mat4(1.0f), airplanePosition) *
-                                    glm::mat4_cast( airplaneOrientation /* skip modelCorrection here */ ) *
+                                    glm::mat4_cast( airplaneOrientation ) *
                                     glm::scale  (glm::mat4(1.0f), airplaneScale);
 
                 glm::mat4 rotorLocal =
