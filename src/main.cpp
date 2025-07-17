@@ -1654,9 +1654,9 @@ protected:
                 switch (currentProjectionMode) {
                 case ORTHOGRAPHIC:
                     {
-                        float halfWidth = orthoZoom * Ar;
-                        float halfHeight = orthoZoom;
-                        projectionMatrix = glm::ortho(-halfWidth, halfWidth, -halfHeight, halfHeight, -100.f, 300.f);
+                        float halfWidth  = 5.0f * orthoZoom * Ar;
+                        float halfHeight = 5.0f * orthoZoom;
+                        projectionMatrix = glm::ortho(-halfWidth, halfWidth, -halfHeight, halfHeight, 1.f, 300.f);
                         break;
                     }
                 case ISOMETRIC:
@@ -1678,12 +1678,37 @@ protected:
 
                 projectionMatrix[1][1] *= -1; // Correzione per Vulkan
 
-                // La logica della viewMatrix rimane quasi invariata, ma per l'isometrica va forzata
                 if (currentProjectionMode == ISOMETRIC) {
-                    // Fixed camera position for isometric view
-                    const float isoDistance = 40.0f;
-                    glm::vec3 isoCameraPos = airplanePosition + glm::vec3(isoDistance, isoDistance, isoDistance);
-                    viewMatrix = glm::lookAt(isoCameraPos, airplanePosition, glm::vec3(0.0f, 1.0f, 0.0f));
+                    glm::mat4 identity = glm::mat4(1.0f);
+
+                    // Rotate 45° around Y-axis
+                    glm::mat4 rotationY = glm::rotate(identity, glm::radians(45.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+
+                    // Rotate -35.26° around X-axis
+                    glm::mat4 rotationX = glm::rotate(identity, glm::radians(-35.264f), glm::vec3(1.0f, 0.0f, 0.0f));
+
+                    // Combine rotations and reposition with respect to camera and airplane
+                    glm::mat4 isoViewRotation = rotationX * rotationY;
+                    glm::vec3 cameraOffset = glm::vec3(0.0f, 0.0f, 40.0f); // distance along Z, adjust as needed
+                    glm::vec4 rotatedOffset = isoViewRotation * glm::vec4(cameraOffset, 1.0f);
+                    glm::vec3 cameraPos = airplanePosition + glm::vec3(rotatedOffset);
+
+                    // Build view matrix looking at the airplane
+                    viewMatrix = glm::lookAt(cameraPos, airplanePosition, glm::vec3(0.0f, 1.0f, 0.0f));
+                } else if (currentProjectionMode == ORTHOGRAPHIC) {
+                    const float topDistance = 50.0f;
+
+                    // Place the camera directly above the airplane
+                    glm::vec3 cameraPos = airplanePosition + glm::vec3(0.0f, topDistance, 0.0f);
+
+                    // Look straight down at the airplane
+                    glm::vec3 target = airplanePosition;
+
+                    // 'Up' vector should be something perpendicular to the view direction.
+                    // Since we're looking straight down (negative Y), we can use +Z or -Z as up.
+                    glm::vec3 up = glm::vec3(-1.0f, 0.0f, 0.0f); // or (0, 0, 1), depending on your coordinate system
+
+                    viewMatrix = glm::lookAt(cameraPos, target, up);
                 } else {
                     viewMatrix = glm::lookAt(finalCameraPos, cameraLookAt, cameraUp);
                 }
