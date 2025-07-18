@@ -96,11 +96,10 @@ protected:
     // Here you list all the Vulkan objects you need:
 
     // Descriptor Layouts [what will be passed to the shaders]
-    DescriptorSetLayout DSLlocalSimp, DSLlocalGem, DSLlocalPBR, DSLglobal, DSLglobalGround, DSLskyBox;
+    DescriptorSetLayout DSLlocalSimp, DSLlocalPBR, DSLglobal, DSLglobalGround, DSLskyBox;
 
     // Vertex formants, Pipelines [Shader couples] and Render passes
     VertexDescriptor VDsimp;
-    VertexDescriptor VDgem;
     VertexDescriptor VDskyBox;
     VertexDescriptor VDtan;
     RenderPass RP;
@@ -365,18 +364,6 @@ protected:
                               {2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 1, 1}
                           });
 
-        DSLlocalGem.init(this, {
-                             // this array contains the binding:
-                             // first  element : the binding number
-                             // second element : the type of element (buffer or texture)
-                             // third  element : the pipeline stage where it will be used
-                             {
-                                 0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_VERTEX_BIT,
-                                 sizeof(UniformBufferObjectSimp), 1
-                             },
-                             {1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 0, 1},
-                             {2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 1, 1}
-                         });
 
         DSLskyBox.init(this, {
                            {
@@ -422,23 +409,6 @@ protected:
                         }
                     });
 
-        VDgem.init(this, {
-                       {0, sizeof(VertexSimp), VK_VERTEX_INPUT_RATE_VERTEX}
-                   }, {
-                       {
-                           0, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(VertexSimp, pos),
-                           sizeof(glm::vec3), POSITION
-                       },
-                       {
-                           0, 1, VK_FORMAT_R32G32B32_SFLOAT, offsetof(VertexSimp, norm),
-                           sizeof(glm::vec3), NORMAL
-                       },
-                       {
-                           0, 2, VK_FORMAT_R32G32_SFLOAT, offsetof(VertexSimp, UV),
-                           sizeof(glm::vec2), UV
-                       }
-                   });
-
         VDskyBox.init(this, {
                           {0, sizeof(skyBoxVertex), VK_VERTEX_INPUT_RATE_VERTEX}
                       }, {
@@ -469,11 +439,10 @@ protected:
                        }
                    });
 
-        VDRs.resize(4);
+        VDRs.resize(3);
         VDRs[0].init("VDsimp", &VDsimp);
         VDRs[1].init("VDskybox", &VDskyBox);
         VDRs[2].init("VDtan", &VDtan);
-        VDRs[3].init("VDgem", &VDgem);
 
         // initializes the render passes
         RP.init(this);
@@ -488,8 +457,8 @@ protected:
 
         PsimpObj.init(this, &VDsimp, "shaders/SimplePosNormUV.vert.spv", "shaders/CookTorrance.frag.spv",
                       {&DSLglobal, &DSLlocalSimp});
-        Pgem.init(this, &VDgem, "shaders/Gem.vert.spv", "shaders/CookTorranceGem.frag.spv",
-                  {&DSLglobal, &DSLlocalGem});
+        Pgem.init(this, &VDsimp, "shaders/SimplePosNormUV.vert.spv", "shaders/CookTorranceGem.frag.spv",
+                  {&DSLglobal, &DSLlocalSimp});
 
         PskyBox.init(this, &VDskyBox, "shaders/SkyBoxShader.vert.spv", "shaders/SkyBoxShader.frag.spv", {&DSLskyBox});
         // Here we assure that the skybox is rendered before the other objects, where there is nothing else
@@ -526,7 +495,7 @@ protected:
                                 }
                             }
                         }
-                    }, /*TotalNtextures*/2, &VDgem);
+                    }, /*TotalNtextures*/2, &VDsimp);
         PRs[2].init("SkyBox", {
                         {
                             &PskyBox, {
@@ -820,7 +789,6 @@ protected:
         DSLlocalPBR.cleanup();
         DSLskyBox.cleanup();
         DSLglobal.cleanup();
-        DSLlocalGem.cleanup();
 
         PsimpObj.destroy();
         PskyBox.destroy();

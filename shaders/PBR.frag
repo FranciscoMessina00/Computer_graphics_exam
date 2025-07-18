@@ -46,6 +46,7 @@ vec3 Fresnel(float cosTheta, vec3 F0) {
 }
 
 float DistributionGGX(vec3 N, vec3 H, float roughness) {
+    // squared for reduced smoothness
     float a = roughness * roughness;
     float a2 = a * a;
     float NdotH = max(dot(N, H), 0.0001f);
@@ -113,9 +114,10 @@ void main() {
     const float TILE_SIZE = 10.0f;
     vec2 worldUV = fragUV_world / TILE_SIZE;
     vec2 offset  = gubo.airplanePos.xz / TILE_SIZE;
+    worldUV += offset;
 
-    vec2 tileID = floor(worldUV + offset);
-    vec2 tiledUV = fract(worldUV + offset);
+    vec2 tileID = floor(worldUV);
+    vec2 tiledUV = fract(worldUV);
 
     // --- generate per‐tile randomness ---
     float rnd = random_value(tileID);
@@ -130,7 +132,7 @@ void main() {
     // --- apply them around the tile‐center (0.5,0.5) ---
     vec2 uv = tiledUV - 0.5;
     uv = rotate2D(uv, angle);
-    worldUV = tileID + uv + 0.5;
+    vec2 rotatedWorldUV = tileID + uv + 0.5;
     // --------------
 
     float waterLevel = gubo.otherParams.y;
@@ -139,10 +141,10 @@ void main() {
     float shoreBlend = 0.3; // Blending factor
 
     // Get colors from textures
-    vec3 waterColor = texture(waterMap, worldUV).rgb;
-    vec3 sandColor = texture(sandMap, worldUV).rgb;
-    vec3 grassColor = texture(albedoMap, worldUV).rgb; // Use albedoMap for grass
-    vec3 rockColor = texture(rockMap, worldUV).rgb;
+    vec3 waterColor = texture(waterMap, rotatedWorldUV).rgb;
+    vec3 sandColor = texture(sandMap, rotatedWorldUV).rgb;
+    vec3 grassColor = texture(albedoMap, rotatedWorldUV).rgb; // Use albedoMap for grass
+    vec3 rockColor = texture(rockMap, rotatedWorldUV).rgb;
 
     // Blend between water and sand
     float waterSandMix = smoothstep(waterLevel - shoreBlend, waterLevel + shoreBlend, fragPos.y);
@@ -189,23 +191,9 @@ void main() {
 
 
     // Ambient light contribution colors
-    const float scaling = 0.03f;
-    // blu
-    const vec3 cxp = vec3(0.2,0.5,0.9) * scaling;
-    // blu arancione
-    const vec3 cxn = vec3(0.9,0.6,0.7) * scaling;
+    const float scaling = 0.01f;
     // blu cielo
-    const vec3 cyp = vec3(0.2,0.7,1.0) * scaling;
-    // verde prato
-    const vec3 cyn = vec3(0.34,0.76,0.4) * scaling;
-    // arancione
-    const vec3 czp = vec3(0.9,0.6,0.0) * scaling;
-    // blu scuro
-    const vec3 czn = vec3(0.24,0.0,0.91) * scaling;
-
-    vec3 ambient =((N.x > 0 ? cxp : cxn) * (N.x * N.x) +
-    (N.y > 0 ? cyp : cyn) * (N.y * N.y) +
-    (N.z > 0 ? czp : czn) * (N.z * N.z)) * albedo;
+    const vec3 ambient = vec3(0.2,0.7,1.0) * scaling;
     //vec3 ambient = vec3(0.015f) * albedo;
 
     vec3 color = (ambient + Lo * occlusion);
