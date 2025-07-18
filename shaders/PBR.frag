@@ -41,7 +41,7 @@ vec3 getNormalFromMap(mat3 TBN, vec2 worldUV) {
     return normalize(TBN * tangentNormal);
 }
 
-vec3 fresnelSchlick(float cosTheta, vec3 F0) {
+vec3 Fresnel(float cosTheta, vec3 F0) {
     return F0 + (1.0 - F0) * pow(1.0 - cosTheta, 5.0);
 }
 
@@ -55,22 +55,22 @@ float DistributionGGX(vec3 N, vec3 H, float roughness) {
     return a2 / (PI * denom * denom);
 }
 
-float GeometrySchlickGGX(float NdotV, float roughness) {
+float GeometryGGX(float NdotV, float roughness) {
     float r = (roughness + 1.0);
     float k = (r * r) / 8.0;
     return NdotV / (NdotV * (1.0 - k) + k);
 }
 
-float GeometrySmith(vec3 N, vec3 V, vec3 L, float roughness) {
-    return GeometrySchlickGGX(max(dot(N, V), 0.0001f), roughness) *
-    GeometrySchlickGGX(max(dot(N, L), 0.0001f), roughness);
+float Geometry(vec3 N, vec3 V, vec3 L, float roughness) {
+    return GeometryGGX(max(dot(N, V), 0.0001f), roughness) *
+    GeometryGGX(max(dot(N, L), 0.0001f), roughness);
 }
 
 // ------------------------------------------------------------
 // a tiny 2D hash:  maps integer 2D coords -> [0,1)
-float hash12(vec2 p) {
+float random_value(vec2 p) {
     // a classic “sin dot” trick
-    return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
+    return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453);
 }
 
 // rotate a 2D vector around (0,0) by angle θ:
@@ -110,7 +110,7 @@ void main() {
 
     // --------------
 
-    const float TILE_SIZE = 10.0;
+    const float TILE_SIZE = 10.0f;
     vec2 worldUV = fragUV_world / TILE_SIZE;
     vec2 offset  = gubo.airplanePos.xz / TILE_SIZE;
 
@@ -118,7 +118,7 @@ void main() {
     vec2 tiledUV = fract(worldUV + offset);
 
     // --- generate per‐tile randomness ---
-    float rnd = hash12(tileID);
+    float rnd = random_value(tileID);
     float angle = 0.0;
     if (rnd < 0.33) {
         angle = PI / 2.0; // 90 degrees
@@ -130,9 +130,7 @@ void main() {
     // --- apply them around the tile‐center (0.5,0.5) ---
     vec2 uv = tiledUV - 0.5;
     uv = rotate2D(uv, angle);
-    // uv = tiledUV;
-    // worldUV += offset;
-    worldUV = uv;
+    worldUV = tileID + uv + 0.5;
     // --------------
 
     float waterLevel = gubo.otherParams.y;
@@ -158,15 +156,8 @@ void main() {
     float grassRockMix = smoothstep(rockLevel - shoreBlend, rockLevel + shoreBlend, fragPos.y);
     albedo = mix(albedo, rockColor, grassRockMix);
 
-
-//    float groundOcclusion = texture(groundOcclusionMap, worldUV).r;
-//    float waterOcclusion  = texture(waterOcclusionMap, worldUV / 2).r;
     float occlusion  = texture(groundOcclusionMap, worldUV).r;
-
-//    float groundRoughness = texture(groundRoughnessMap, worldUV).r * 0.5f;
-//    float waterRoughness  = texture(waterRoughnessMap, worldUV / 2).r * 0.5f;
     float roughness = texture(groundRoughnessMap, worldUV).r * 0.5f;
-
 
     vec3 N = normalize(fragNorm);
     vec3 T = normalize(fragTan.xyz);
@@ -183,8 +174,8 @@ void main() {
     vec3 F0 = mix(vec3(0.04), albedo, 0.1);
 
     float NDF = DistributionGGX(Nmap, H, roughness);
-    float G   = GeometrySmith(Nmap, V, L, roughness);
-    vec3 F    = fresnelSchlick(max(dot(H, V), 0.0), F0);
+    float G   = Geometry(Nmap, V, L, roughness);
+    vec3 F    = Fresnel(max(dot(H, V), 0.0), F0);
 
     vec3 specular = (NDF * G * F) /
     max(4.0 * max(dot(Nmap, V), 0.0001f) * max(dot(Nmap, L), 0.0), 0.0001f);

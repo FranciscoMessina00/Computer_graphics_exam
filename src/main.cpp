@@ -1126,7 +1126,7 @@ protected:
             glm::rotate(glm::mat4(1), glm::radians(-45.0f), glm::vec3(1.0f, 0.0f, 0.0f));
         GlobalUniformBufferObject gubo{};
         gubo.lightDir = glm::vec3(lightView * glm::vec4(0.0f, 0.0f, 1.0f, 1.0f));
-        gubo.lightColor = glm::vec4(1.0f);
+        gubo.lightColor = glm::vec4(6.0f);
         gubo.eyePos = cameraPos;
         GlobalUniformBufferGround guboground{};
         guboground.lightDir = glm::vec3(lightView * glm::vec4(0.0f, 0.0f, 1.0f, 1.0f));
