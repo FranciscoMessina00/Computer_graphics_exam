@@ -55,7 +55,7 @@ struct GlobalUniformBufferGround
     alignas(16) glm::vec3 lightDir;
     alignas(16) glm::vec4 lightColor;
     alignas(16) glm::vec3 eyePos;
-    alignas(16) glm::vec3 eyePosNoSmooth;
+    alignas(16) glm::vec3 referencePosition;
     alignas(16) glm::vec4 otherParams;
 };
 
@@ -185,7 +185,6 @@ protected:
     glm::vec3 airplaneScale = glm::vec3(1.0f);
     bool airplaneInitialized = false;
     bool isEngineOn = false;
-    bool isAirplaneOnGround = true;
     float thrustCoefficient = 200.0f; // Coefficiente di spinta
     float speed = 5.0f;
     float dragCoefficient = 1.0f;
@@ -216,10 +215,10 @@ protected:
     dHeightfieldDataID hfData = dGeomHeightfieldDataCreate();
     dGeomID            groundHF = nullptr;
     void rebuildHeightSamples(float worldX, float worldZ, float scale){
-        // center the grid on the airplane
+        // center the grid on the coordinates passed
         float startX = worldX - HF_COLS/2 * CELL_SIZE;
         float startZ = worldZ - HF_ROWS/2 * CELL_SIZE;
-
+        // loop over the grid and sample the noise
         for(int rz = 0; rz < HF_ROWS; ++rz){
             for(int cx = 0; cx < HF_COLS; ++cx){
                 float wx = startX + cx * CELL_SIZE;
@@ -231,6 +230,7 @@ protected:
                 // std::cout << "Sample at (" << wx << ", " << wz << ") = " << h << "\n";
             }
         }
+        // Set the ground height to the sample at the center of the grid (airplane position)
         groundY = heightSamples[HF_ROWS/2 * HF_COLS + HF_COLS/2];
         // std::cout << "Sample at airplane position: " << heightSamples[HF_ROWS/2 * HF_COLS + HF_COLS/2] << "\n";
     };
@@ -252,10 +252,9 @@ protected:
     float enginePitch = 1.0f; // Pitch of the engine sound
     const float fadeSpeed = 1.5f; // larger = faster cross‑fade
 
-    // Indici per il pavimento
+    // ground indexes
     int groundTechIdx = -1;
     int groundInstIdx = -1;
-    // fix the ground’s Y (height) to whatever you want—say groundY = 0.0f:
     float groundY = 0.1f;
     glm::mat4 groundBaseWm = glm::mat4(1.f);
     Model* ground = nullptr;
@@ -295,10 +294,10 @@ protected:
 
     void updateGroundHeightfield(float scale)
     {
-        // 1) refill the sample array around the current airplane XZ
+        // refill the sample array around the current airplane XZ
         rebuildHeightSamples( airplanePosition.x, airplanePosition.z, scale);
 
-        // 2) rebuild the heightfield data in place
+        // rebuild the ODE ground geometry
         dGeomHeightfieldDataBuildSingle(
           hfData,
           heightSamples.data(),
@@ -310,7 +309,7 @@ protected:
           1.0, 0.0, 1.0, false
         );
 
-        // 3) reposition the geom so it stays centered under the airplane
+        // reposition the geom so it stays centered under the airplane
         dGeomSetPosition(groundHF,
                          airplanePosition.x,
                          0.0f,
@@ -463,9 +462,6 @@ protected:
         PskyBox.init(this, &VDskyBox, "shaders/SkyBoxShader.vert.spv", "shaders/SkyBoxShader.frag.spv", {&DSLskyBox});
         // Here we assure that the skybox is rendered before the other objects, where there is nothing else
         PskyBox.setCompareOp(VK_COMPARE_OP_LESS_OR_EQUAL);
-        // Here we set the cull mode to back faces, this is also done by default for PsimpObj and P_PBR
-        PskyBox.setCullMode(VK_CULL_MODE_BACK_BIT);
-        PskyBox.setPolygonMode(VK_POLYGON_MODE_FILL);
 
         P_PBR.init(this, &VDtan, "shaders/SimplePosNormUvTan.vert.spv", "shaders/PBR.frag.spv",
                    {&DSLglobalGround, &DSLlocalPBR});
@@ -538,7 +534,7 @@ protected:
             exit(0);
         }
 
-        // Cerca l'indice della tecnica e dell'istanza dell'aereo e del pavimento
+        // Finding index of airplain and rotor
         for (int i = 0; i < PRs.size(); i++)
         {
             for (int j = 0; j < SC.TI[i].InstanceCount; j++)
@@ -567,7 +563,6 @@ protected:
             odeSpace = dSimpleSpaceCreate(0);
             dWorldSetGravity(odeWorld, 0, -9.81, 0); // Imposta la gravità!
             contactgroup = dJointGroupCreate(0);
-            // odeGroundPlane = dCreatePlane(odeSpace, 0, 1, 0, groundY);
 
             // build the heightfield data once
             heightSamples = std::vector<float>(HF_ROWS * HF_COLS);
@@ -586,28 +581,22 @@ protected:
               /*bWrap=*/ false                // do not tile
             );
 
-            // now create the placeable geom in your collision space
+            // ODE ground creation
             groundHF = dCreateHeightfield(odeSpace, hfData, /*bPlaceable=*/true);
             dGeomSetPosition(groundHF,
                              airplanePosition.x,
                              0.0f,
                              airplanePosition.z);
-            // Crea il corpo rigido per l'aereo
+            // create rigid body of airplane
             odeAirplaneBody = dBodyCreate(odeWorld);
             dBodySetPosition(odeAirplaneBody, airplanePosition.x, airplanePosition.y, airplanePosition.z);
             dBodySetAngularDamping(odeAirplaneBody, 0.5f);
-            // Imposta la massa del corpo. È importante per la simulazione.
-            // Iniziamo con una massa di 100kg e la distribuiamo come una sfera.
+            // set the initial position and mass of the airplane
             dMassSetZero(&odeAirplaneMass);
             dMassSetBoxTotal(&odeAirplaneMass, 80.0f, lx, ly, lz);
             dBodySetMass(odeAirplaneBody, &odeAirplaneMass);
-
-            // Crea una geometria per le collisioni (per ora una semplice sfera)
-            // Anche se non hai collisioni, è buona norma averla.
-
             odeAirplaneGeom = dCreateBox(odeSpace, lx, ly, lz);
             dGeomSetBody(odeAirplaneGeom, odeAirplaneBody);
-            // --- FINE SETUP ODE ---
         }
         else
         {
@@ -624,7 +613,7 @@ protected:
         txt.print(1.0f, 1.0f, "FPS:", FPS, "CO", false, false, true, TAL_RIGHT, TRH_RIGHT, TRV_BOTTOM,
                   {1.0f, 0.0f, 0.0f, 1.0f}, {0.8f, 0.8f, 0.0f, 1.0f}, {0, 0, 0, 1});
 
-        // Adding randomisation of gems
+        // setting randomisation variables
         std::random_device rd;
         rng = std::mt19937(rd());
         shakeDist = std::uniform_real_distribution<float>(-0.1f, 0.1f);
@@ -644,6 +633,7 @@ protected:
         noiseGround.SetFractalOctaves(2);
         noiseGround.SetFractalGain(0.8f);
 
+        // init the gems position randomly but will have no scale
         gemWorlds.resize(10);
         for (auto& M : gemWorlds)
         {
@@ -653,9 +643,10 @@ protected:
                 * glm::scale(glm::mat4(1.0f), glm::vec3(0.f));
         }
 
-
+        // initialize the audio part
         audioInit();
 
+        // find the 2Dplane
         for (int i = 0; i < PRs.size(); i++)
         {
             for (int j = 0; j < SC.TI[i].InstanceCount; j++)
@@ -690,6 +681,7 @@ protected:
             exit(0);
         }
         else {
+            // initialize dynamically the ground
             std::cout << "Ground mesh '2DplaneTan' found with ID: " << groundMeshId << "\n";
             ground = SC.M[ groundMeshId ];
             rawVB_original = ground->vertices;
@@ -698,6 +690,7 @@ protected:
             ground->initDynamicVertexBuffer(this /* your BaseProject ptr */, byteSize);
             ground->updateVertexBuffer();
         }
+        // initialize the trees
         treeWorld.resize(400);
         for (auto& M : treeWorld)
         {
@@ -717,11 +710,10 @@ protected:
 
         if (airplaneTechIdx != -1)
         {
+            // Set real airplane position and orientation if found
             const glm::mat4& initialWm = SC.TI[airplaneTechIdx].I[airplaneInstIdx].Wm;
             airplanePosition = glm::vec3(initialWm[3]);
             dBodySetPosition(odeAirplaneBody, airplanePosition.x, airplanePosition.y, airplanePosition.z);
-            dBodySetLinearDamping(odeAirplaneBody, 0.f);
-            // FIX: Aggiunto damping angolare per maggiore stabilità
             dBodySetAngularDamping(odeAirplaneBody, 0.5f);
             airplaneScale = glm::vec3(glm::length(glm::vec3(initialWm[0])), glm::length(glm::vec3(initialWm[1])),
                                       glm::length(glm::vec3(initialWm[2])));
@@ -735,7 +727,7 @@ protected:
             airplaneOrientation = glm::quat_cast(rotationPart) * airplaneModelCorrection;
             airplaneInitialized = true;
 
-            dBodySetLinearDamping(odeAirplaneBody, 0.005f); // adjust between 0.1–10.0
+            dBodySetLinearDamping(odeAirplaneBody, 0.005f);
         }
 
         std::cout << "Init done!\n";
@@ -831,16 +823,17 @@ protected:
         RP.end(commandBuffer);
     }
 
-    // =================================================================================
-    // Funzioni Helper Modulari
-    // =================================================================================
+    // This is called every frame, to update the 2Dplane
     void shift2Dplane() {
         if (gameState != GAME_OVER) {
+            // Retreving raw bytes of the ground mesh
             ground->vertices = rawVB_original;
             std::vector<unsigned char>& rawVB = ground->vertices;
 
+            // Stride is the size of a single vertex in bytes
             size_t stride    = ground->VD->Bindings[0].stride;
-            size_t posOffset = ground->VD->Position.offset;  // byte‑offset in each vertex
+            // Get the position offset in the vertex structure (therefore lower than stride)
+            size_t posOffset = ground->VD->Position.offset;
 
             glm::vec3 worldOffset = airplanePosition;
             glm::vec3 scale;
@@ -852,42 +845,41 @@ protected:
             const float HEIGHT_SCALE = 0.05f;
 
             float lx = 0.f, lz = 0.f, wx = 0.f, wz = 0.f, h = 0.f;
-
+            // for each vertex in the ground mesh
             for (size_t i = 0; i < rawVB.size(); i += stride) {
                 glm::vec3* p =
                     reinterpret_cast<glm::vec3*>(&rawVB[i + posOffset]);
 
-                // local XZ:
+                // local XZ
                 lx = p->x * scale.x , lz = p->z * scale.z;
-
+                // world XZ
                 wx = lx + worldOffset.x;
                 wz = lz + worldOffset.z;
 
-                // after computing your raw noise‑height:
+                // computing height of that vertex
                 float rawH    = noiseGround.GetNoise(wx * NOISE_SCALE,
                                                      wz * NOISE_SCALE)
                               * HEIGHT_SCALE;
 
-                // your “hard” floor in world‑units:
+                // water level
                 const float floorY      = (waterLevel - 0.2f) / 500.f;
 
-                // how wide (in world‑units) the blend region is around floorY:
+                // how wide (in world‑units) the blend region is around floorY
                 const float blendWidth  = 0.5f / 500.f;
 
-                // now compute a blend factor t that goes 0→1 as rawH goes
-                // from (floorY - blendWidth) up to (floorY + blendWidth)
+                // blend factor t that goes 0 to 1 as rawH goes from (floorY - blendWidth) up to (floorY + blendWidth)
                 float t = glm::smoothstep(floorY - blendWidth,
                                           floorY + blendWidth,
                                           rawH);
 
-                // and your “flat” version (maybe you still want a tiny wiggle):
+                // small animation of water level
                 float flatH = floorY
                             - std::abs(noiseGround.GetNoise(wx * NOISE_SCALE,
                                                             wz * NOISE_SCALE,
                                                             counterGlobal * 0.3f)
                                        * 0.001f);
 
-                // finally mix between the two:
+                // mix between the two:
                 h = glm::mix(flatH, rawH, t);
 
                 // write back
@@ -944,7 +936,7 @@ protected:
                     tAccum[i2] += tangent;  bAccum[i2] += bitan;
                 }
 
-                // 3) Orthonormalize per-vertex and write back into rawVB
+                // Orthonormalize per-vertex and write back into rawVB
                 for (size_t vi = 0; vi < vertexCount; ++vi) {
                     // normalize accumulated normal
                     glm::vec3 n = glm::normalize(nAccum[vi]);
@@ -968,6 +960,7 @@ protected:
             // ---------------------------------------------------
             ground->updateVertexBuffer();
         }
+        // Update the ground heightfield of ODE
         updateGroundHeightfield(glm::length(glm::vec3(groundBaseWm[1])));
     }
 
@@ -981,12 +974,11 @@ protected:
     // Callback per le collisioni
     static void nearCallback(void* data, dGeomID o1, dGeomID o2)
     {
-        CG_Exam* app = (CG_Exam*)data; // Recupera il puntatore all'applicazione
+        CG_Exam* app = (CG_Exam*)data;
 
         dBodyID b1 = dGeomGetBody(o1);
         dBodyID b2 = dGeomGetBody(o2);
 
-        // Ignora collisioni tra oggetti statici
         if (b1 && b2 && dBodyIsKinematic(b1) && dBodyIsKinematic(b2)) return;
 
         const int MAX_CONTACTS = 5; // Massimo numero di punti di contatto
@@ -999,8 +991,8 @@ protected:
             for (int i = 0; i < numc; i++)
             {
                 contact[i].surface.mode = dContactBounce | dContactSoftCFM;
-                contact[i].surface.mu = 50.f; // Attrito
-                contact[i].surface.bounce = 0.f; // Rimbalzo
+                contact[i].surface.mu = 50.f; // Friction
+                contact[i].surface.bounce = 0.f; // Bounce
                 contact[i].surface.bounce_vel = 0.0;
                 contact[i].surface.soft_cfm = 0.001;
 
@@ -1015,8 +1007,6 @@ protected:
         }
     }
 
-    // --- Helper per la gestione dell'input con debouncing ---
-    // Restituisce true solo sul primo frame in cui il tasto viene premuto.
     bool handleDebouncedKeyPress(int key)
     {
         static std::map<int, bool> keyDebounceState;
@@ -1035,7 +1025,6 @@ protected:
         return false;
     }
 
-    // --- Gestione input da tastiera per debug/azioni ---
     void handleKeyboardInput()
     {
         if (glfwGetKey(window, GLFW_KEY_ESCAPE))
@@ -1050,7 +1039,7 @@ protected:
 
         if (handleDebouncedKeyPress(GLFW_KEY_H))
         {
-            if (gameState == PLAYING)
+            if (gameState == PLAYING && !gameTimerActive)
             {
                 activateCountdownTimer = true;
                 timerCountdown = 3.0f;
@@ -1072,10 +1061,9 @@ protected:
         }
     }
 
-    // --- Aggiorna stato e animazioni ---
-    void updateState(float deltaT)
+    void updateGemsRotation(float deltaT)
     {
-        // Animazione di rotazione delle gemme
+        // gem rotation update
         const float GEM_SPIN_SPEED = glm::two_pi<float>() / 5.0f;
         gemAngle += GEM_SPIN_SPEED * deltaT;
         if (gemAngle > glm::two_pi<float>())
@@ -1090,6 +1078,7 @@ protected:
         shift2Dplane();
         const int SIMP_TECH_INDEX = 0, GEM_TECH_INDEX = 1, SKY_TECH_INDEX = 2, PBR_TECH_INDEX = 3;
 
+        // Setting uniform buffers
         const glm::mat4 lightView = glm::rotate(glm::mat4(1), glm::radians(-30.0f), glm::vec3(0.0f, 1.0f, 0.0f)) *
             glm::rotate(glm::mat4(1), glm::radians(-45.0f), glm::vec3(1.0f, 0.0f, 0.0f));
         GlobalUniformBufferObject gubo{};
@@ -1100,36 +1089,40 @@ protected:
         guboground.lightDir = glm::vec3(lightView * glm::vec4(0.0f, 0.0f, 1.0f, 1.0f));
         guboground.lightColor = glm::vec4(1.0f);
         guboground.eyePos = cameraPos;
-        guboground.eyePosNoSmooth = gameState != GAME_OVER ? airplanePosition : cameraPos;
+        guboground.referencePosition = gameState != GAME_OVER ? airplanePosition : cameraPos;
         guboground.otherParams = glm::vec4(groundY, waterLevel, grassLevel, rockLevel);
 
         UniformBufferObjectSimp ubos{};
         for (int inst_idx = 0; inst_idx < SC.TI[SIMP_TECH_INDEX].InstanceCount; ++inst_idx)
         {
+            // check if the instance is the airplane and rotor (index 0 and 1) or the trees (index 2 and above)
             if (inst_idx <= 1) ubos.mMat = SC.TI[SIMP_TECH_INDEX].I[inst_idx].Wm;
             else ubos.mMat = treeWorld[inst_idx - 2];
+
             ubos.mvpMat = ViewPrj * ubos.mMat;
             ubos.nMat = glm::inverse(glm::transpose(ubos.mMat));
             SC.TI[SIMP_TECH_INDEX].I[inst_idx].DS[0][0]->map(currentImage, &gubo, 0);
             SC.TI[SIMP_TECH_INDEX].I[inst_idx].DS[0][1]->map(currentImage, &ubos, 0);
         }
 
-        UniformBufferObjectGround ubogpbr{};
-        for (int inst_idx = 0; inst_idx < SC.TI[PBR_TECH_INDEX].InstanceCount; ++inst_idx)
+        if (SC.TI[SKY_TECH_INDEX].InstanceCount > 0)
         {
-            ubogpbr.mMat = SC.TI[PBR_TECH_INDEX].I[inst_idx].Wm;
+            UniformBufferObjectGround ubogpbr{};
+            // Here mMat contains the real world matrix of the ground
+            ubogpbr.mMat = SC.TI[PBR_TECH_INDEX].I[0].Wm;
             ubogpbr.mvpMat = ViewPrj * ubogpbr.mMat;
             ubogpbr.nMat = glm::inverse(glm::transpose(ubogpbr.mMat));
-            // glm::mat4 groundBaseWmYshift = glm::translate(groundBaseWm, glm::vec3(0.0f, groundY, 0.0f));
+            // Here we set the ground position in local coordinates
             ubogpbr.worldMat = groundBaseWm;
-            SC.TI[PBR_TECH_INDEX].I[inst_idx].DS[0][0]->map(currentImage, &guboground, 0);
-            SC.TI[PBR_TECH_INDEX].I[inst_idx].DS[0][1]->map(currentImage, &ubogpbr, 0);
+            SC.TI[PBR_TECH_INDEX].I[0].DS[0][0]->map(currentImage, &guboground, 0);
+            SC.TI[PBR_TECH_INDEX].I[0].DS[0][1]->map(currentImage, &ubogpbr, 0);
         }
 
         UniformBufferObjectSimp uboGem{};
         glm::mat4 spinY = glm::rotate(glm::mat4(1.0f), gemAngle, glm::vec3(0, 1, 0));
         for (int inst_idx = 0; inst_idx < SC.TI[GEM_TECH_INDEX].InstanceCount; ++inst_idx)
         {
+            // apply gem rotation animation
             uboGem.mMat = gemWorlds[inst_idx] * spinY * glm::rotate(glm::mat4(1.0f), glm::radians(90.0f),
                                                                     glm::vec3(1, 0, 0)) * glm::scale(
                 glm::mat4(1.0f), glm::vec3(gemScale));
@@ -1150,7 +1143,6 @@ protected:
         }
 
 
-        // Aggiornamento HUD (precedentemente in una funzione separata)
         static float elapsedT = 0.0f;
         static int countedFrames = 0;
 
@@ -1169,24 +1161,25 @@ protected:
         txt.updateCommandBuffer();
     }
 
-    // =================================================================================
-    // Funzione Principale di Aggiornamento - Versione Unificata
-    // =================================================================================
-
     void updateUniformBuffer(uint32_t currentImage)
     {
-
         float deltaT;
         glm::vec3 m, r;
         bool fire;
         getSixAxis(deltaT, m, r, fire);
         glm::mat4 viewMatrix;
         counterGlobal += deltaT;
-        // Assicuriamoci che deltaT non sia zero o negativo per evitare instabilità
+        // just to avoid problems with zeros
         if (deltaT <= 0.0f) deltaT = 0.0001f;
 
+        // START MENU
         if (gameState == START_MENU && airplaneInitialized)
         {
+            if (glfwGetKey(window, GLFW_KEY_ESCAPE))
+            {
+                glfwSetWindowShouldClose(window, GL_TRUE);
+            }
+
             const float ROTATION_SPEED = 0.4f; // Velocità di rotazione in radianti al secondo
             const float CAMERA_DISTANCE = 12.0f; // Distanza dall'aereo
             const float CAMERA_HEIGHT = 3.0f;   // Altezza
@@ -1231,10 +1224,10 @@ protected:
                 gameState = PLAYING;
             }
         }
+        // PLAYING
         else if (gameState == PLAYING)
         {
             handleKeyboardInput();
-
 
             float targetFov = baseFov;
             if (isBoosting && currentCameraMode == THIRD_PERSON && isEngineOn)
@@ -1244,6 +1237,7 @@ protected:
             float fovInterpSpeed = 5.0f;
             currentFov = glm::mix(currentFov, targetFov, fovInterpSpeed * deltaT);
 
+            // User pressed H to start the game, timer countdown
             if (activateCountdownTimer)
             {
                 timerCountdown -= deltaT;
@@ -1257,32 +1251,32 @@ protected:
                 }
                 else
                 {
-                    activateCountdownTimer = false; // Resetta il timer una volta scaduto
+                    // Countdown finished, position the gems
+                    activateCountdownTimer = false;
                     txt.removeText(COUNTDOWN_TEXT);
                     gameTimerActive = true;
                     initGems();
-                    // gameTime = 5.0f;
                 }
             }
 
+            // Countdown finished, we begin the game
             if (gameTimerActive)
             {
                 timer += deltaT;
                 if (timer < gameTime && gemsCollected < gemsToCollect)
                 {
-                    // Formatta il tempo in MM:SS
+                    // Formatting time string
                     int minutes = static_cast<int>(gameTime - timer) / 60;
                     int seconds = static_cast<int>(gameTime - timer) % 60;
                     std::ostringstream oss;
                     oss << std::setw(2) << std::setfill('0') << minutes << ":"
                         << std::setw(2) << std::setfill('0') << seconds;
 
-                    // Visualizza il secondo timer (1 minuto) usando un ID diverso (es. 5)
                     txt.print(0.5f, 0.5f, oss.str(), TIMER_TEXT, "CO", true, false, true, TAL_CENTER, TRH_CENTER, TRV_MIDDLE,{1, 1, 1, 1}, {0, 0, 0, 1}, {0, 0, 0, 1}, 1, 1);
                 }
                 else
                 {
-                    // Il secondo timer è scaduto
+                    // Game over condition when timer expires or all gems are collected
                     gameTimerActive = false;
                     txt.removeText(TIMER_TEXT); // Rimuove il testo del timer
                     txt.removeText(COLLECTED_GEMS_TEXT); // Rimuove il testo delle gemme
@@ -1297,22 +1291,23 @@ protected:
 
             if (airplaneInitialized)
             {
+                // gather airplane position and orientation to update it
                 const dReal* velocity = dBodyGetLinearVel(odeAirplaneBody);
                 const dReal* pos = dBodyGetPosition(odeAirplaneBody);
                 glm::vec3 globalVel{ velocity[0], velocity[1], velocity[2] };
                 float magSpeed = glm::length(globalVel);
 
+                const float basePitchAccel = 25.f;
+                const float baseYawAccel = 20.f;
+                const float baseRollAccel = 100.f;
 
-                const float basePitchAccel = 25.f; // m/s^2, tune to your liking
-                const float baseYawAccel = 20.f; // m/s^2, tune to your liking
-                const float baseRollAccel = 100.f; // m/s^2, tune to your liking
-
+                // setting rotation acceleration properties
                 float a_pitch = basePitchAccel * (magSpeed / maxSpeed);
                 float a_yaw   = baseYawAccel   * (magSpeed / maxSpeed);
                 float a_roll  = baseRollAccel * (magSpeed / maxSpeed);
 
-                // assuming inertia tensor is diagonal in body frame
-                const float inertiaScale = 1.f; // tune to your liking
+                // retrieving inertial properties
+                const float inertiaScale = 1.f;
                 const dReal Ixx = odeAirplaneMass.I[0] * inertiaScale;
                 const dReal Iyy = odeAirplaneMass.I[5] * inertiaScale;
                 const dReal Izz = odeAirplaneMass.I[10] * inertiaScale;
@@ -1331,17 +1326,17 @@ protected:
                                   dragForce.y,
                                   dragForce.z);
                 }
-                const float takeoffSpeed = 5.0f; // m/s, tune to your liking
+                const float takeoffSpeed = 15.0f;
 
-                isAirplaneOnGround = (pos[1] <= groundY + 0.3f);
                 bool keysPressed = false;
 
-                if (!isAirplaneOnGround)
+                // Allow controls when airplane is on
+                if (isEngineOn)
                 {
-                    // --- CONTROLLO IN VOLO (AERODINAMICO) ---
                     if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS)
                     {
                         keysPressed = true;
+                        // turn the plane with a torque over roll and yaw axis (local)
                         dBodyAddRelTorque(odeAirplaneBody,
                                           +Izz * a_roll,
                                           0,
@@ -1351,62 +1346,45 @@ protected:
                                           +Iyy * a_yaw,
                                           0);
 
-                        // --- 3) Lateral “skid” force ---
-                        //  a) get the body → world rotation quaternion
                         const dReal* q = dBodyGetQuaternion(odeAirplaneBody);
                         glm::quat Q{
                             static_cast<float>(q[0]), static_cast<float>(q[1]), static_cast<float>(q[2]),
                             static_cast<float>(q[3])
                         };
 
-                        // b) compute body‑space right axis ( +Z or +Y depending on convention;
-                        //    here we assume body +Z is right wing, adjust if yours is different )
+                        // Direction of steering
                         glm::vec3 leftB = glm::normalize(glm::vec3(-0.5, 0, 1));
-
-                        // c) rotate it into world space:
                         glm::vec3 leftW = Q * leftB;
+                        float lateralForceMag = 500.0f;
 
-                        // d) pick a lateral force magnitude (tune this!)
-                        float lateralForceMag = 500.0f; // e.g. 500 N
-
-                        // e) apply that force sideways at the CG
                         glm::vec3 F = leftW * lateralForceMag;
                         dBodyAddForce(odeAirplaneBody, F.x, F.y, F.z);
                     }
                     if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
                     {
                         keysPressed = true;
-                        // --- 1) Roll torque (roll to the right) ---
+                        // turn the plane with a torque over roll and yaw axis (local)
                         dBodyAddRelTorque(odeAirplaneBody,
                                           -Izz * a_roll, // body‑x axis roll
                                           0,
                                           0);
 
-                        // --- 2) Yaw torque (turn nose right) ---
                         dBodyAddRelTorque(odeAirplaneBody,
                                           0,
                                           -Iyy * a_yaw,
                                           0);
 
-                        // --- 3) Lateral “skid” force ---
-                        //  a) get the body → world rotation quaternion
                         const dReal* q = dBodyGetQuaternion(odeAirplaneBody);
                         glm::quat Q{
                             static_cast<float>(q[0]), static_cast<float>(q[1]), static_cast<float>(q[2]),
                             static_cast<float>(q[3])
                         };
 
-                        // b) compute body‑space right axis ( +Z or +Y depending on convention;
-                        //    here we assume body +Z is right wing, adjust if yours is different )
+                        // Direction of steering
                         glm::vec3 rightB = glm::normalize(glm::vec3(-0.5, 0, -1));
-
-                        // c) rotate it into world space:
                         glm::vec3 rightW = Q * rightB;
+                        float lateralForceMag = 500.0f;
 
-                        // d) pick a lateral force magnitude (tune this!)
-                        float lateralForceMag = 500.0f; // e.g. 500 N
-
-                        // e) apply that force sideways at the CG
                         glm::vec3 F = rightW * lateralForceMag;
                         dBodyAddForce(odeAirplaneBody, F.x, F.y, F.z);
                     }
@@ -1414,14 +1392,15 @@ protected:
                     if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
                     {
                         keysPressed = true;
-                        // positive pitch (nose up)
+                        // negative pitch (nose down)
                         dBodyAddRelTorque(odeAirplaneBody,
                                           0,
                                           0, +Ixx * a_pitch);
 
-                        const float rho = 1.225f; // kg/m^3, density of air at sea level
-                        const float wingArea = 10.0f; // m^2, tune to your liking
-                        const float CL = 1.0f; // lift coefficient, tune to your liking
+                        const float rho = 1.225f;
+                        const float wingArea = 10.0f;
+                        const float CL = 1.0f;
+                        // Lift force is always perpendicular to the wing (small trick here is to push down the airplane)
                         float liftMag = 0.5f * rho * magSpeed * magSpeed * wingArea * CL;
                         const dReal* q = dBodyGetQuaternion(odeAirplaneBody);
                         glm::quat orient(q[0], q[1], q[2], q[3]);
@@ -1439,9 +1418,10 @@ protected:
                                           0,
                                           0, -Ixx * a_pitch);
 
-                        const float rho = 1.225f; // kg/m^3, density of air at sea level
-                        const float wingArea = 10.0f; // m^2, tune to your liking
-                        const float CL = 1.0f; // lift coefficient, tune to your liking
+                        const float rho = 1.225f;
+                        const float wingArea = 10.0f;
+                        const float CL = 1.0f;
+                        // Lift force is always perpendicular to the wing (here we push up the airplane)
                         float liftMag = 0.5f * rho * magSpeed * magSpeed * wingArea * CL;
                         const dReal* q = dBodyGetQuaternion(odeAirplaneBody);
                         glm::quat orient(q[0], q[1], q[2], q[3]);
@@ -1453,39 +1433,29 @@ protected:
                     }
                 }
 
+                // if no keys are pressed, apply a roll stabilizer
                 if (!keysPressed) {
-                    // Stabilizzatore di solo rollio
                     const dReal* q = dBodyGetQuaternion(odeAirplaneBody);
                     glm::quat currentOrientation(q[0], q[1], q[2], q[3]);
 
-                    // Calcola il vettore "destra" dell'aereo nello spazio del mondo
-                    glm::vec3 worldRight = currentOrientation * glm::vec3(0, 0, 1); // Assumendo +Z come destra nel modello
-
-                    // Proietta il vettore "destra" sul piano orizzontale del mondo (XZ)
+                    glm::vec3 worldRight = currentOrientation * glm::vec3(0, 0, 1);
                     glm::vec3 projectedRight = glm::normalize(glm::vec3(worldRight.x, 0.0f, worldRight.z));
 
-                    // Calcola l'angolo di rollio (inclinazione)
-                    // L'asse Y del vettore "destra" del mondo indica l'inclinazione
-                    float rollAngle = -worldRight.y; // Usa il negativo a seconda della convenzione
+                    float rollAngle = -worldRight.y;
 
-                    // Calcola la coppia di correzione attorno all'asse avanti dell'aereo
-                    glm::vec3 worldForward = currentOrientation * glm::vec3(-1, 0, 0); // Assumendo -X come avanti
-                    glm::vec3 rollTorque = worldForward * rollAngle * 4000.0f; // Aumenta la costante per una correzione più forte
+                    glm::vec3 worldForward = currentOrientation * glm::vec3(-1, 0, 0);
+                    glm::vec3 rollTorque = worldForward * rollAngle * 4000.0f;
 
-                    // Applica la coppia per stabilizzare il rollio
                     dBodyAddTorque(odeAirplaneBody, rollTorque.x, rollTorque.y, rollTorque.z);
-                    // pitch stabilizer (body torque)
-                    float pitchError = worldForward.z;
-                    glm::vec3 pitchTorque = glm::vec3(0, 0, 1) * -pitchError * 5000.0f;
-                    // dBodyAddRelTorque(odeAirplaneBody, pitchTorque.x, pitchTorque.y, pitchTorque.z);
                 }
-
+                // When flying turn off gravity for easier flight commands
                 if (isEngineOn && magSpeed > takeoffSpeed) {
-                    dWorldSetGravity(odeWorld, 0, 0.f, 0); // Imposta la gravità!
+                    dWorldSetGravity(odeWorld, 0, 0.f, 0);
                 }else {
-                    dWorldSetGravity(odeWorld, 0, -9.81, 0); // Imposta la gravità!
+                    dWorldSetGravity(odeWorld, 0, -9.81, 0);
                 }
 
+                // accelerate airplane when engine is on
                 if (isEngineOn) {
                     const float thrustMagnitude = thrustCoefficient * speed; // tune this
                     dReal fx = thrustMagnitude;
@@ -1494,20 +1464,19 @@ protected:
                     dBodyAddRelForce(odeAirplaneBody, -fx, fy, fz);
                 }
 
-
+                // to avoid plane going too fast, we limit the speed
                 if (magSpeed > maxSpeed) {
-                    // glm::dvec3 v_clamped = v * (maxSpeed / speed);
-                    // dBodySetLinearVel(odeAirplaneBody, v_clamped.x, v_clamped.y, v_clamped.z);
-                    // Optionally clear applied forces so they don't instantly re-accelerate:
                     dBodySetForce(odeAirplaneBody, 0, 0, 0);
                 }
 
+                // check collision
                 dSpaceCollide(odeSpace, this, &nearCallback);
                 const dReal stepSize = deltaT;
                 dWorldStep(odeWorld, stepSize);
 
                 dJointGroupEmpty(contactgroup);
 
+                // gather airplane position and orientation from ODE to update it to the scene
                 pos = dBodyGetPosition(odeAirplaneBody);
                 const dReal* rot = dBodyGetQuaternion(odeAirplaneBody);
                 const dReal* linVel = dBodyGetLinearVel(odeAirplaneBody);
@@ -1543,7 +1512,8 @@ protected:
                     glm::rotate(glm::mat4(1.0f), spinAngle, glm::vec3(1,0,0));
                 SC.TI[airplaneTechIdx].I[airplaneRotor].Wm = airplaneGlobal * rotorLocal * rotorSpin;
 
-                // --- Logica della Telecamera ---
+
+                // Different views of the camera
                 glm::vec3 cameraOffset;
                 glm::vec3 targetCameraLookAt = airplanePosition;
 
@@ -1612,11 +1582,9 @@ protected:
                 currentShakeOffset = glm::mix(currentShakeOffset, targetShakeOffset, shakeInterpFactor);
                 glm::vec3 finalCameraPos = cameraPos + currentShakeOffset;
 
-                // FIX: L'asse "up" della camera deve seguire il rollio dell'aereo per evitare scatti
                 glm::vec3 cameraUp = glm::normalize(airplaneOrientation * glm::vec3(0.0f, 1.0f, 0.0f));
-                //viewMatrix = glm::lookAt(finalCameraPos, cameraLookAt, cameraUp);
 
-                //Tree projection modalities,a perspective and 2 orthographic
+                //Projection modalities, a perspective and 2 orthographic
                 glm::mat4 projectionMatrix;
                 switch (currentProjectionMode) {
                 case ORTHOGRAPHIC:
@@ -1683,6 +1651,7 @@ protected:
                 ViewPrj = projectionMatrix * viewMatrix;
 
                 updateTreePositions();
+                // If collision happens, or in water, turn off engine and GAME OVER
                 collisionDetected();
                 insideWater();
 
@@ -1693,6 +1662,7 @@ protected:
             }
             GameLogic();
         }
+        // GAME OVER
         else if (gameState == GAME_OVER)
         {
             if (glfwGetKey(window, GLFW_KEY_ESCAPE))
@@ -1702,7 +1672,7 @@ protected:
 
             if (airplaneInitialized)
             {
-                // Aggiorna le matrici di vista e proiezione
+                // The camera will stay fixed in the last position, wil not follow the airplane
                 glm::mat4 projectionMatrix = glm::perspective(currentFov, Ar, 1.f, 500.f);
                 projectionMatrix[1][1] *= -1;
                 viewMatrix = glm::lookAt(cameraPos, cameraLookAt, glm::vec3(0.0f, 1.0f, 0.0f));
@@ -1716,8 +1686,7 @@ protected:
                 }
                 jointFeedbacks.clear();
 
-
-                // Aggiorna posizione e orientamento dell'aereo dal motore fisico
+                // keep the plane going where it has heading, either with engine on or off
                 const dReal* pos = dBodyGetPosition(odeAirplaneBody);
                 const dReal* rot = dBodyGetQuaternion(odeAirplaneBody);
                 airplanePosition = glm::vec3(pos[0], pos[1], pos[2]);
@@ -1729,14 +1698,13 @@ protected:
                     dReal fy = 0;
                     dReal fz = 0;
                     dBodyAddRelForce(odeAirplaneBody, -fx, fy, fz);
-                    dWorldSetGravity(odeWorld, 0, 0.f, 0); // Imposta la gravità!
+                    dWorldSetGravity(odeWorld, 0, 0.f, 0);
                 }
                 else
                 {
-                    dWorldSetGravity(odeWorld, 0, -9.81, 0); // Imposta la gravità!
+                    dWorldSetGravity(odeWorld, 0, -9.81, 0);
                 }
 
-                // Aggiorna la matrice del modello dell'aereo
                 SC.TI[airplaneTechIdx].I[airplaneInstIdx].Wm =
                     glm::translate(glm::mat4(1.0f), airplanePosition) *
                     glm::mat4_cast(airplaneOrientation * airplaneModelCorrection) *
@@ -1765,7 +1733,7 @@ protected:
                 SC.TI[airplaneTechIdx].I[airplaneRotor].Wm = airplaneGlobal * rotorLocal * rotorSpin;
             }
 
-            // Mostra il messaggio di fine gioco
+            // end game message
             std::ostringstream oss;
             if (inWater) {
                 oss << "Sei entrato in acqua!";
@@ -1786,13 +1754,11 @@ protected:
 
             txt.print(0.f, 0.f, oss.str(), GAME_OVER_TEXT, "SS", false, true, true, TAL_CENTER,
                       TRH_CENTER, TRV_MIDDLE, {1, 1, 1, 1}, {0, 0, 0, 1}, {0, 0, 0, 1}, 1, 1);
-
-            // Aggiorna gli uniformi e il command buffer alla fine
-            // updateUniforms(currentImage, deltaT);
         }
 
         updateUniforms(currentImage, deltaT);
 
+        // Update the OpenAL listener and sources
         alListener3f(AL_POSITION, cameraPos.x, cameraPos.y, cameraPos.z);
         alListener3f(AL_VELOCITY, airplaneVelocity.x, airplaneVelocity.y, airplaneVelocity.z);
         for (unsigned int engineSource : engineSources) {
@@ -1809,6 +1775,8 @@ protected:
         };
         alListenerfv(AL_ORIENTATION, ori);
 
+
+        // move the ground plane to follow the airplane (not in game over)
         glm::mat4 groundXzFollow = glm::translate(
             glm::mat4(1.0f),
             glm::vec3(airplanePosition.x, 0, airplanePosition.z)
@@ -1819,7 +1787,8 @@ protected:
             SC.TI[groundTechIdx].I[groundInstIdx].Wm = groundXzFollow * groundBaseWm;
         }
 
-        updateState(deltaT);
+        // update the gems rotation and engine audio
+        updateGemsRotation(deltaT);
         updateEngineAudio(deltaT);
     }
 
@@ -2019,11 +1988,11 @@ protected:
             float yNew = sampleHeight(x, z);
             while (yNew < -0.5f)
             {
-                if (movedX && !movedZ) { // Spostato solo sull'asse X
+                if (movedX && !movedZ) {
                     z = airplanePosition.z + treeZ(rng);
-                } else if (!movedX && movedZ) { // Spostato solo sull'asse Z
+                } else if (!movedX && movedZ) {
                     x = airplanePosition.x + treeX(rng);
-                } else { // Spostato su entrambi gli assi o per niente (ma y è basso)
+                } else {
                     x = airplanePosition.x + treeX(rng);
                     z = airplanePosition.z + treeZ(rng);
                 }
@@ -2035,8 +2004,24 @@ protected:
 
     void audioCleanUp()
     {
+        // Clean up OpenAL resources
         alDeleteSources(1, &audio_source);
+        for (unsigned int engineSource : engineSources) {
+            alDeleteSources(1, &engineSource);
+        }
+        for (unsigned int gemSource : gemSources) {
+            alDeleteSources(1, &gemSource);
+        }
+        alDeleteSources(1, &gemCollectedSource);
         alDeleteBuffers(1, &audio_buffer);
+        for (unsigned int engineBuffer : engineBuffers) {
+            alDeleteBuffers(1, &engineBuffer);
+        }
+        for (unsigned int gemBuffer : gemBuffers) {
+            alDeleteBuffers(1, &gemBuffer);
+        }
+        alDeleteBuffers(1, &gemCollectedBuffer);
+        // Clean up OpenAL context and device
         alcMakeContextCurrent(nullptr);
         alcDestroyContext(context);
         alcCloseDevice(device);
