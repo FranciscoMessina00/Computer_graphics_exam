@@ -162,12 +162,12 @@ protected:
     std::uniform_real_distribution<float> treeX;
     std::uniform_real_distribution<float> treeZ;
 
-    // Indici per l'aereo
+    // Airplane indexes
     int airplaneTechIdx = -1;
     int airplaneInstIdx = -1;
     int airplaneRotor = -1;
 
-    // Variabili per il controllo dell'aereo
+    // Airplane parameters
     glm::vec3 airplanePosition = {};
     glm::vec3 airplaneVelocity = {};
     glm::quat airplaneOrientation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
@@ -190,6 +190,7 @@ protected:
     float grassLevel = -1.5f;
     float rockLevel = 15.f;
 
+    // ODE parameters
     dWorldID odeWorld = nullptr;
     dSpaceID odeSpace = nullptr;
     dBodyID odeAirplaneBody = nullptr;
@@ -204,8 +205,11 @@ protected:
     const float HEIGHT_SCALE = 0.05f;       // noise amplitude
     std::vector<float> heightSamples;
 
+    // Where ODE will store the heightfield data
     dHeightfieldDataID hfData = dGeomHeightfieldDataCreate();
     dGeomID            groundHF = nullptr;
+
+    // Noise generator for the ground heightfield, this will update the height of ODE ground geometry
     void rebuildHeightSamples(float worldX, float worldZ, float scale){
         // center the grid on the coordinates passed
         float startX = worldX - HF_COLS/2 * CELL_SIZE;
@@ -227,6 +231,7 @@ protected:
         // std::cout << "Sample at airplane position: " << heightSamples[HF_ROWS/2 * HF_COLS + HF_COLS/2] << "\n";
     };
 
+    // Audio parameters
     ALCdevice* device = nullptr;
     ALCcontext* context = nullptr;
     ALuint audio_source = -1;
@@ -284,6 +289,7 @@ protected:
         txt.resizeScreen(w, h);
     }
 
+    // This function build the ground heightfield geometry
     void updateGroundHeightfield(float scale)
     {
         // refill the sample array around the current airplane XZ
@@ -758,7 +764,7 @@ protected:
     // You also have to destroy the pipelines
     void localCleanup()
     {
-        // --- Cleanup di ODE ---
+        // --- ODE cleanup ---
         if (airplaneInitialized)
         {
             dGeomDestroy(odeAirplaneGeom);
@@ -975,10 +981,19 @@ protected:
 
         const int MAX_CONTACTS = 5;
         dContact contact[MAX_CONTACTS];
-
+        // dCollide does the collision test between two geometries
         int numc = dCollide(o1, o2, MAX_CONTACTS, &contact[0].geom, sizeof(dContact));
 
-        if (numc > 0)
+        if (numc > 0) // if number of contacts is greater than 0...
+        {
+            // If the bodies are not kinematic, we need to apply forces
+            if (b1 && !dBodyIsKinematic(b1)) dBodyAddForce(b1, 0, 0, 0);
+            if (b2 && !dBodyIsKinematic(b2)) dBodyAddForce(b2, 0, 0, 0);
+
+            // If the bodies are kinematic, we do not apply forces
+            if (b1 && dBodyIsKinematic(b1)) b1 = nullptr;
+            if (b2 && dBodyIsKinematic(b2)) b2 = nullptr;
+        }
         {
             for (int i = 0; i < numc; i++)
             {
@@ -1064,7 +1079,7 @@ protected:
         }
     }
 
-    // --- Aggiorna tutti gli Uniform Buffer per il frame corrente ---
+    // --- Update all uniform buffers ---
     void updateUniforms(uint32_t currentImage, float deltaT)
     {
         shift2Dplane();
@@ -1172,9 +1187,9 @@ protected:
                 glfwSetWindowShouldClose(window, GL_TRUE);
             }
 
-            const float ROTATION_SPEED = 0.4f; // Velocità di rotazione in radianti al secondo
-            const float CAMERA_DISTANCE = 12.0f; // Distanza dall'aereo
-            const float CAMERA_HEIGHT = 3.0f;   // Altezza
+            const float ROTATION_SPEED = 0.4f; // Rotation speed
+            const float CAMERA_DISTANCE = 12.0f; // distance from the airplane
+            const float CAMERA_HEIGHT = 3.0f;   // Height of the camera above the airplane
             menuCameraAngle += ROTATION_SPEED * deltaT;
             if (menuCameraAngle > glm::two_pi<float>()) {
                 menuCameraAngle -= glm::two_pi<float>();
@@ -1270,13 +1285,12 @@ protected:
                 {
                     // Game over condition when timer expires or all gems are collected
                     gameTimerActive = false;
-                    txt.removeText(TIMER_TEXT); // Rimuove il testo del timer
-                    txt.removeText(COLLECTED_GEMS_TEXT); // Rimuove il testo delle gemme
+                    txt.removeText(TIMER_TEXT); // Remove the timer text
+                    txt.removeText(COLLECTED_GEMS_TEXT); // Remove the collected gems text
                     gameState = GAME_OVER;
-                    // Calcola l'offset corrente della telecamera rispetto all'aereo
                     glm::vec3 cameraOffset = cameraPos - airplanePosition;
-                    // Calcola l'angolo iniziale per la rotazione della telecamera
-                    // usando atan2 per ottenere l'angolo nel piano XZ
+                    // Calculate the camera angle for game over view
+                    // using atan2 to obtain the angle in radians
                     gameOverCameraAngle = atan2(cameraOffset.x, cameraOffset.z);
                 }
             }
@@ -1603,7 +1617,7 @@ protected:
                     }
                 }
 
-                projectionMatrix[1][1] *= -1; // Correzione per Vulkan
+                projectionMatrix[1][1] *= -1; // Vulkan convention, flip Y-axis
 
                 if (currentProjectionMode == ISOMETRIC) {
                     glm::mat4 identity = glm::mat4(1.0f);
