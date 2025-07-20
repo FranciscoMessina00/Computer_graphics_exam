@@ -66,14 +66,6 @@ struct UniformBufferObjectSimp
     alignas(16) glm::mat4 nMat;
 };
 
-struct UniformBufferObjectGround
-{
-    alignas(16) glm::mat4 mvpMat;
-    alignas(16) glm::mat4 mMat;
-    alignas(16) glm::mat4 nMat;
-    alignas(16) glm::mat4 worldMat;
-};
-
 struct skyBoxUniformBufferObject
 {
     alignas(16) glm::mat4 mvpMat;
@@ -379,7 +371,7 @@ protected:
                              // third  element : the pipeline stage where it will be used
                              {
                                  0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_VERTEX_BIT,
-                                 sizeof(UniformBufferObjectGround), 1
+                                 sizeof(UniformBufferObjectSimp), 1
                              },
                              {1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 0, 1},
                              {2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 1, 1},
@@ -971,7 +963,7 @@ protected:
         baseFov = glm::clamp(baseFov, minFov, maxFov);
     }
 
-    // Callback per le collisioni
+    // Collision callback
     static void nearCallback(void* data, dGeomID o1, dGeomID o2)
     {
         CG_Exam* app = (CG_Exam*)data;
@@ -981,7 +973,7 @@ protected:
 
         if (b1 && b2 && dBodyIsKinematic(b1) && dBodyIsKinematic(b2)) return;
 
-        const int MAX_CONTACTS = 5; // Massimo numero di punti di contatto
+        const int MAX_CONTACTS = 5;
         dContact contact[MAX_CONTACTS];
 
         int numc = dCollide(o1, o2, MAX_CONTACTS, &contact[0].geom, sizeof(dContact));
@@ -1105,15 +1097,15 @@ protected:
             SC.TI[SIMP_TECH_INDEX].I[inst_idx].DS[0][1]->map(currentImage, &ubos, 0);
         }
 
-        if (SC.TI[SKY_TECH_INDEX].InstanceCount > 0)
+        if (SC.TI[PBR_TECH_INDEX].InstanceCount > 0)
         {
-            UniformBufferObjectGround ubogpbr{};
+            UniformBufferObjectSimp ubogpbr{};
             // Here mMat contains the real world matrix of the ground
             ubogpbr.mMat = SC.TI[PBR_TECH_INDEX].I[0].Wm;
             ubogpbr.mvpMat = ViewPrj * ubogpbr.mMat;
             ubogpbr.nMat = glm::inverse(glm::transpose(ubogpbr.mMat));
             // Here we set the ground position in local coordinates
-            ubogpbr.worldMat = groundBaseWm;
+            // ubogpbr.worldMat = groundBaseWm;
             SC.TI[PBR_TECH_INDEX].I[0].DS[0][0]->map(currentImage, &guboground, 0);
             SC.TI[PBR_TECH_INDEX].I[0].DS[0][1]->map(currentImage, &ubogpbr, 0);
         }

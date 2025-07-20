@@ -5,7 +5,6 @@ layout(location = 0) in vec3 fragPos;
 layout(location = 1) in vec3 fragNorm;
 layout(location = 2) in vec2 fragUV;
 layout(location = 3) in vec4 fragTan;
-layout(location = 4) in vec2 fragUV_world;
 
 layout(location = 0) out vec4 outColor;
 
@@ -82,12 +81,10 @@ vec2 rotate2D(vec2 v, float theta) {
 }
 
 void main() {
-    // -------------- simple shadow
-    // how high above the ground am I?
+    // simple shadow
     float hAbove = gubo.airplanePos.y - gubo.otherParams.x; // ground height
 
     // project that point onto the ground plane, along the light‑direction:
-    //   P + t·L  such that y == groundY
     float t = hAbove / gubo.lightDir.y;
     vec3 planeProjected = gubo.airplanePos - gubo.lightDir * t;
     vec2 shadowCenter   = planeProjected.xz;
@@ -99,11 +96,9 @@ void main() {
     float d = dot(dir, lightXZ); // stretch along light
     float ortho = length(dir - lightXZ * d); // perpendicular
     float dist = sqrt((d * d) * stretchFactor + ortho * ortho);
-    //float dist = length(fragXZ - shadowCenter);
 
     // Adjust shadow size based on airplane height
     float shadowRadius = clamp(shadowSize - hAbove * 0.05, 0.0, shadowSize);
-
     float shadowStrength = mix(maxShadowStrength, minShadowStrength, clamp(hAbove / 50.0, 0.0, 1.0));
 
     // soft circular shadow (dark center, smooth edges)
@@ -112,9 +107,8 @@ void main() {
     // --------------
 
     const float TILE_SIZE = 10.0f;
+    vec2 fragUV_world = fragPos.xz;
     vec2 worldUV = fragUV_world / TILE_SIZE;
-    vec2 offset  = gubo.airplanePos.xz / TILE_SIZE;
-    worldUV += offset;
 
     vec2 tileID = floor(worldUV);
     vec2 tiledUV = fract(worldUV);
@@ -167,8 +161,11 @@ void main() {
     mat3 TBN = computeTBN(N, T, w);
     vec3 Nmap = getNormalFromMap(TBN, worldUV);
 
+    // View direction
     vec3 V = normalize(gubo.eyePos - fragPos);
+    // Light direction
     vec3 L = normalize(gubo.lightDir);
+    // Halfway vector
     vec3 H = normalize(V + L);
     vec3 radiance = gubo.lightColor.rgb;
 
@@ -194,14 +191,9 @@ void main() {
     const float scaling = 0.01f;
     // blu cielo
     const vec3 ambient = vec3(0.2,0.7,1.0) * scaling;
-    //vec3 ambient = vec3(0.015f) * albedo;
 
     vec3 color = (ambient + Lo * occlusion);
     color *= mix(vec3(1.0), vec3(1.0 - shadowStrength), shadow);
 
     outColor = vec4(color, 1.0);
-    //outColor = vec4(albedo * vec3(clamp(dot(N, L),0.0,1.0)) + vec3(pow(clamp(dot(N, H),0.0,1.0), 160.0)) + ambient, 1.0);
-    //outColor = vec4(albedo * vec3(clamp(dot(Nmap, L),0.0,1.0)) + vec3(pow(clamp(dot(Nmap, H),0.0,1.0), 160.0)) + ambient, 1.0);
-	//outColor = vec4((Nmap+1.0f)*0.5f, 1.0);
-	//outColor = vec4(texture(normalMap, fragUV).xyz, 1.0);
 }
