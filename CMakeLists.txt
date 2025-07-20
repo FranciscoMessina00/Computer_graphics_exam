@@ -129,6 +129,17 @@ elseif(WIN32)
     target_link_libraries(${PROJECT_NAME} PRIVATE OpenAL32)
     target_link_libraries(${PROJECT_NAME} PRIVATE ODE)
 
+    # Copy OpenAL32.dll (from source dir) next to the exe
+    add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${CMAKE_SOURCE_DIR}/OpenAL32.dll"
+            $<TARGET_FILE_DIR:${PROJECT_NAME}>)
+
+    # Copy the ODE-built DLL (e.g. libode_double.dll) next to the exe
+    add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            $<TARGET_FILE:ODE>
+            $<TARGET_FILE_DIR:${PROJECT_NAME}>)
 
     # === Shader Compilation ===
     file(MAKE_DIRECTORY ${CMAKE_BINARY_DIR}/shaders)
@@ -216,4 +227,3 @@ elseif(UNIX AND NOT APPLE)
 else()
     message(FATAL_ERROR "Unsupported platform: ${CMAKE_SYSTEM_NAME}")
 endif()
-
