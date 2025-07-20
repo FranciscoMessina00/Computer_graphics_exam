@@ -25,10 +25,10 @@ layout(binding = 0, set = 0) uniform GlobalUniformBufferObject {
 } gubo;
 
 const float PI = 3.14159265359;
-const float stretchFactor = 0.7; // stretch factor for shadow
-const float shadowSize = 3.0; // size of the shadow
-const float maxShadowStrength = 0.5; // 0.0 = no shadow, 1.0 = full shadow
-const float minShadowStrength = 0.01;
+const float stretchFactor = 0.7f; // stretch factor for shadow
+const float shadowSize = 3.0f; // size of the shadow
+const float maxShadowStrength = 0.5f; // 0.0 = no shadow, 1.0 = full shadow
+const float minShadowStrength = 0.01f;
 
 mat3 computeTBN(vec3 N, vec3 T, float tangentW) {
     vec3 B = cross(N, T) * tangentW;
@@ -85,19 +85,25 @@ void main() {
     float hAbove = gubo.airplanePos.y - gubo.otherParams.x; // ground height
 
     // project that point onto the ground plane, along the light‑direction:
+    // we are solving the equation: - P_ground = P_airplane + lightDir * t
     float t = hAbove / gubo.lightDir.y;
     vec3 planeProjected = gubo.airplanePos - gubo.lightDir * t;
     vec2 shadowCenter   = planeProjected.xz;
 
+    // we only need the XZ coordinates for the shadow
     vec2 fragXZ = fragPos.xz;
-
+    // direction of the light, projected onto the XZ plane normalized
     vec2 lightXZ = normalize(gubo.lightDir.xz);
+    // calculate the distance from the shadow center to the fragment position
     vec2 dir = fragXZ - shadowCenter;
-    float d = dot(dir, lightXZ); // stretch along light
-    float ortho = length(dir - lightXZ * d); // perpendicular
+    // component in the direction of the light
+    float d = dot(dir, lightXZ);
+    // orthogonal component to the light direction
+    float ortho = length(dir - lightXZ * d);
+    // calculate the distance to the shadow center, stretched by a factor
     float dist = sqrt((d * d) * stretchFactor + ortho * ortho);
 
-    // Adjust shadow size based on airplane height
+    // Adjust shadow size and strength based on airplane height
     float shadowRadius = clamp(shadowSize - hAbove * 0.05, 0.0, shadowSize);
     float shadowStrength = mix(maxShadowStrength, minShadowStrength, clamp(hAbove / 50.0, 0.0, 1.0));
 
@@ -137,7 +143,7 @@ void main() {
     // Get colors from textures
     vec3 waterColor = texture(waterMap, rotatedWorldUV).rgb;
     vec3 sandColor = texture(sandMap, rotatedWorldUV).rgb;
-    vec3 grassColor = texture(albedoMap, rotatedWorldUV).rgb; // Use albedoMap for grass
+    vec3 grassColor = texture(albedoMap, rotatedWorldUV).rgb;
     vec3 rockColor = texture(rockMap, rotatedWorldUV).rgb;
 
     // Blend between water and sand
