@@ -242,7 +242,7 @@ protected:
     ALuint gemSources[10];
     ALuint gemCollectedSource = -1;
     ALuint gemCollectedBuffer = -1;
-
+    bool mute = false;
     float sourceGains[2] = { 1.f, 0.f };
     float gemSourceGain = 1.f;
     float gemCollectedGain = 0.3f;
@@ -1065,6 +1065,14 @@ protected:
         isBoosting = false;
         if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS) {
             isBoosting = true;
+        }
+        if (handleDebouncedKeyPress(GLFW_KEY_M))
+        {
+            mute = !mute;
+            if (mute)
+                alListenerf(AL_GAIN, 0.0f);
+            else
+                alListenerf(AL_GAIN, 1.0f);
         }
     }
 
