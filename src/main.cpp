@@ -452,16 +452,16 @@ protected:
         // be used in this pipeline. The first element will be set 0, and so on..
 
 
-        PsimpObj.init(this, &VDsimp, "shaders/SimplePosNormUV.vert.spv", "shaders/CookTorrance.frag.spv",
+        PsimpObj.init(this, &VDsimp, "shaders/ModelSimple.vert.spv", "shaders/CookTorrance.frag.spv",
                       {&DSLglobal, &DSLlocalSimp});
-        Pgem.init(this, &VDsimp, "shaders/SimplePosNormUV.vert.spv", "shaders/CookTorranceGem.frag.spv",
+        Pgem.init(this, &VDsimp, "shaders/ModelSimple.vert.spv", "shaders/CookTorranceGem.frag.spv",
                   {&DSLglobal, &DSLlocalSimp});
 
         PskyBox.init(this, &VDskyBox, "shaders/SkyBoxShader.vert.spv", "shaders/SkyBoxShader.frag.spv", {&DSLskyBox});
         // Here we assure that the skybox is rendered before the other objects, where there is nothing else
         PskyBox.setCompareOp(VK_COMPARE_OP_LESS_OR_EQUAL);
 
-        P_PBR.init(this, &VDtan, "shaders/SimplePosNormUvTan.vert.spv", "shaders/PBR.frag.spv",
+        P_PBR.init(this, &VDtan, "shaders/ModelWithTangents.vert.spv", "shaders/PBR.frag.spv",
                    {&DSLglobalGround, &DSLlocalPBR});
 
         PRs.resize(4);
