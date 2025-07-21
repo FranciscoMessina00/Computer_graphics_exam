@@ -1895,7 +1895,7 @@ protected:
 
     void audioInit()
     {
-        // 1) Open default device & create context
+        // Open default device & create context
         device = alcOpenDevice(nullptr);
         if (!device)
         {
@@ -1911,12 +1911,12 @@ protected:
             return;
         }
 
-        // 3) Set up the listener (camera) defaults
-        //    Position at origin, no velocity
+        // Set up the listener (camera) defaults
+        // Position at origin, no velocity
         alListener3f(AL_POSITION, 0.0f, 0.0f, 0.0f);
         alListener3f(AL_VELOCITY, 0.0f, 0.0f, 0.0f);
 
-        //    Orientation: facing down −Z, with +Y as up
+        // Orientation: facing down −Z, with +Y as up (it will be overwritten)
         float listenerOri[] = {
             0.0f, 0.0f, -1.0f, // “forward” vector
             0.0f, 1.0f, 0.0f // “up” vector
