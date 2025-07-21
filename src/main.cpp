@@ -520,10 +520,10 @@ protected:
 
         // Models, textures and Descriptors (values assigned to the uniforms)
 
-        // sets the size of the Descriptor Set Pool
-        DPSZs.uniformBlocksInPool = 30;
-        DPSZs.texturesInPool = 30;
-        DPSZs.setsInPool = 30;
+        // sets the size of the Descriptor Set Pool, they will be incresed inside SC.init()
+        DPSZs.uniformBlocksInPool = 10;
+        DPSZs.texturesInPool = 10;
+        DPSZs.setsInPool = 10;
 
         std::cout << "\nLoading the scene\n\n";
         if (SC.init(this, /*Npasses*/1, VDRs, PRs, "assets/models/scene.json") != 0)
