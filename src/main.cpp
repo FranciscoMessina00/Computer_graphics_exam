@@ -2043,7 +2043,7 @@ protected:
 
     void loadWavToBuffer(ALuint& buffer, const char* fileName)
     {
-        // 2) Load WAV into an OpenAL buffer
+        // Load WAV into an OpenAL buffer
         drwav wav;
         if (!drwav_init_file(&wav, fileName, nullptr))
         {
